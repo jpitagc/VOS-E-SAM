@@ -12,3 +12,6 @@ test_sample/
 result/
 vots/
 vots.py
+.venvTA
+test.ipynb
+test.py
