@@ -13,5 +13,11 @@ result/
 vots/
 vots.py
 .venvTA
+.venvTAHQ
+.venvTAFast
 test.ipynb
 test.py
+HQRequirements.txt
+notebooks/
+common/
+PythonAPI/

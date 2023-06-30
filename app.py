@@ -374,7 +374,13 @@ e2fgvi_checkpoint_id = "10wGdKSUOie0XmCr8SQ2A2FeDe-mfn5w3"
 
 
 folder ="./checkpoints"
-SAM_checkpoint = download_checkpoint(sam_checkpoint_url, folder, sam_checkpoint)
+# Load differente checkpoint depending on the Venv being used.
+venv = sys.prefix.split("\\")[-1] 
+print(f'Detected Venv: {venv}')
+if('HQ' in venv):
+    SAM_checkpoint = './checkpoints\sam_hq_vit_h.pth'
+else:
+    SAM_checkpoint = download_checkpoint(sam_checkpoint_url, folder, sam_checkpoint)
 xmem_checkpoint = download_checkpoint(xmem_checkpoint_url, folder, xmem_checkpoint)
 e2fgvi_checkpoint = download_checkpoint_from_google_drive(e2fgvi_checkpoint_id, folder, e2fgvi_checkpoint)
 args.port = 12212
