@@ -40,7 +40,10 @@ class TrackingAnything():
     #     return mask, logit, painted_image
 
     def generator(self, images: list, template_mask:np.ndarray):
-        print('Imagenes',images,'||',template_mask)
+        # All loaded images as list of np.arrays. Size of original video 
+        # Initial mask as np.array. 0 for background and 1,2,3... for each mask.
+        # Example -> Imagenes 300 (540, 960, 3) || (540, 960) [0 1 2 3]
+        #print('Imagenes',len(images),images[0].shape,'||',template_mask.shape, np.unique(template_mask))
         masks = []
         logits = []
         painted_images = []
