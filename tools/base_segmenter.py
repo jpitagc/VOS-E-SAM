@@ -20,7 +20,7 @@ class BaseSegmenter:
         print(f"Initializing BaseSegmenter to {device}")
         assert model_type in ['vit_b', 'vit_l', 'vit_h'], 'model_type must be vit_b, vit_l, or vit_h'
 
-        self.device = device
+        self.device = device if torch.cuda.is_available() else torch.device("cpu")
         self.torch_dtype = torch.float16 if 'cuda' in device else torch.float32
         self.model = sam_model_registry[model_type](checkpoint=SAM_checkpoint)
         self.model.to(device=self.device)

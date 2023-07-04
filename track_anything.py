@@ -6,7 +6,7 @@ from tracker.base_tracker import BaseTracker
 from inpainter.base_inpainter import BaseInpainter
 import numpy as np
 import argparse
-
+import torch
 
 
 class TrackingAnything():
@@ -15,9 +15,10 @@ class TrackingAnything():
         self.sam_checkpoint = sam_checkpoint
         self.xmem_checkpoint = xmem_checkpoint
         self.e2fgvi_checkpoint = e2fgvi_checkpoint
-        self.samcontroler = SamControler(self.sam_checkpoint, 'vit_h', 'cuda:0')
-        self.xmem = BaseTracker(self.xmem_checkpoint, device='cuda:0')
-        self.baseinpainter = BaseInpainter(self.e2fgvi_checkpoint,'cuda:0') 
+        current_device = 'cuda:0' #if not torch.cuda.is_available() else torch.device("cpu")
+        self.samcontroler = SamControler(self.sam_checkpoint, 'vit_h', current_device)
+        self.xmem = BaseTracker(self.xmem_checkpoint, device=current_device, sam_model=self.samcontroler if self.args['use_refinement'] else None)
+        self.baseinpainter = BaseInpainter(self.e2fgvi_checkpoint,current_device) 
     # def inference_step(self, first_flag: bool, interact_flag: bool, image: np.ndarray, 
     #                    same_image_flag: bool, points:np.ndarray, labels: np.ndarray, logits: np.ndarray=None, multimask=True):
     #     if first_flag:

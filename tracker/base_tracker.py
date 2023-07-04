@@ -29,6 +29,7 @@ class BaseTracker:
         with open("tracker/config/config.yaml", 'r') as stream: 
             config = yaml.safe_load(stream) 
         # initialise XMem
+        device = device if torch.cuda.is_available() else torch.device("cpu")
         network = XMem(config, xmem_checkpoint).to(device).eval()
         # initialise IncerenceCore
         self.tracker = InferenceCore(network, config)
@@ -43,9 +44,10 @@ class BaseTracker:
         self.mapper = MaskMapper()
         self.initialised = False
 
+        if sam_model: print('Sam Refinement ACTIVATED')
         # # SAM-based refinement
-        # self.sam_model = sam_model
-        # self.resizer = Resize([256, 256])
+        self.sam_model = sam_model
+        self.resizer = Resize([256, 256])
 
     @torch.no_grad()
     def resize_mask(self, mask):
@@ -79,10 +81,12 @@ class BaseTracker:
         # prepare inputs
         frame_tensor = self.im_transform(frame).to(self.device)
         # track one frame
-        probs, _ = self.tracker.step(frame_tensor, mask, labels)   # logits 2 (bg fg) H W
+        probs, logits = self.tracker.step(frame_tensor, mask, labels)   # logits 2 (bg fg) H W
         # # refine
-        # if first_frame_annotation is None:
-        #     out_mask = self.sam_refinement(frame, logits[1], ti)    
+        # Logits is a torch tensor. torch.Size([Num Objects, H, W]
+        if first_frame_annotation is None and self.sam_model:
+            print('Sam Refineent entry', logits.size())
+            out_mask = self.custom_sam_refinement(frame, logits, 1)    
 
         # convert to mask
         out_mask = torch.argmax(probs, dim=0)
@@ -106,21 +110,39 @@ class BaseTracker:
         return final_mask, final_mask, painted_image
 
     @torch.no_grad()
+    def custom_sam_refinement(self, frame, logits, ti):
+        """
+        refine segmentation results with mask prompt
+        """
+        for i in range(0,logits.size(dim=0)):
+            # convert to 1, 256, 256
+            self.sam_model.sam_controler.set_image(frame)
+            mode = 'mask'
+            ind_logits = logits[i].unsqueeze(0)
+            ind_logits = self.resizer(ind_logits).cpu().numpy()
+            prompts = {'mask_input': ind_logits}    # 1 256 256
+            masks, scores, logits_out = self.sam_model.sam_controler.predict(prompts, mode, multimask=True)  # masks (n, h, w), scores (n,), logits (n, 256, 256)
+            painted_image = mask_painter(frame, masks[np.argmax(scores)].astype('uint8'), mask_alpha=0.8)
+            painted_image = Image.fromarray(painted_image)
+            painted_image.save(f'./result/refinement/obj{i}-{ti:05d}.png')
+            self.sam_model.sam_controler.reset_image()
+
+    @torch.no_grad()
     def sam_refinement(self, frame, logits, ti):
         """
         refine segmentation results with mask prompt
         """
         # convert to 1, 256, 256
-        self.sam_model.set_image(frame)
+        self.sam_model.sam_controler.set_image(frame)
         mode = 'mask'
         logits = logits.unsqueeze(0)
         logits = self.resizer(logits).cpu().numpy()
         prompts = {'mask_input': logits}    # 1 256 256
-        masks, scores, logits = self.sam_model.predict(prompts, mode, multimask=True)  # masks (n, h, w), scores (n,), logits (n, 256, 256)
+        masks, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=True)  # masks (n, h, w), scores (n,), logits (n, 256, 256)
         painted_image = mask_painter(frame, masks[np.argmax(scores)].astype('uint8'), mask_alpha=0.8)
         painted_image = Image.fromarray(painted_image)
-        painted_image.save(f'/ssd1/gaomingqi/refine/{ti:05d}.png')
-        self.sam_model.reset_image()
+        painted_image.save(f'./result/refinement/{ti:05d}.png')
+        self.sam_model.sam_controler.reset_image()
 
     @torch.no_grad()
     def clear_memory(self):
