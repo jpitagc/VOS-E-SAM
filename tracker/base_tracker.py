@@ -81,10 +81,10 @@ class BaseTracker:
         # track one frame
         probs, _ = self.tracker.step(frame_tensor, mask, labels)   # logits 2 (bg fg) H W
         # # refine
-        # if first_frame_annotation is None:
+        #if first_frame_annotation is None:
         #     out_mask = self.sam_refinement(frame, logits[1], ti)    
 
-        # convert to mask
+        # convert t o mask
         out_mask = torch.argmax(probs, dim=0)
         out_mask = (out_mask.detach().cpu().numpy()).astype(np.uint8)
 
