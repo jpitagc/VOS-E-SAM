@@ -15,7 +15,7 @@ class TrackingAnything():
         self.sam_checkpoint = sam_checkpoint
         self.xmem_checkpoint = xmem_checkpoint
         self.e2fgvi_checkpoint = e2fgvi_checkpoint
-        current_device = 'cuda:0' #if not torch.cuda.is_available() else torch.device("cpu")
+        current_device = 'cuda:0' # Is CPU only available fixed inside each controler 
         self.samcontroler = SamControler(self.sam_checkpoint, 'vit_h', current_device)
         self.xmem = BaseTracker(self.xmem_checkpoint, device=current_device, sam_model=self.samcontroler if self.args['use_refinement'] else None)
         self.baseinpainter = BaseInpainter(self.e2fgvi_checkpoint,current_device) 

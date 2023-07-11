@@ -45,6 +45,7 @@ class BaseTracker:
         self.initialised = False
 
         if sam_model: print('Sam Refinement ACTIVATED')
+        else: print('Sam Refinement NOT ACTIVATED')
         # # SAM-based refinement
         self.sam_model = sam_model
         self.resizer = Resize([256, 256])
@@ -84,13 +85,17 @@ class BaseTracker:
         probs, logits = self.tracker.step(frame_tensor, mask, labels)   # logits 2 (bg fg) H W
         # # refine
         # Logits is a torch tensor. torch.Size([Num Objects, H, W]
-        if first_frame_annotation is None and self.sam_model:
-            print('Sam Refineent entry', logits.size())
-            out_mask = self.custom_sam_refinement(frame, logits, 1)    
-
+        #if first_frame_annotation is None and self.sam_model:
+        #    print('Sam Refineent entry', logits.size())
+        #    out_mask = self.custom_sam_refinement(frame, logits, 1)    
+        
         # convert to mask
         out_mask = torch.argmax(probs, dim=0)
         out_mask = (out_mask.detach().cpu().numpy()).astype(np.uint8)
+
+        if first_frame_annotation is None and self.sam_model:
+            print('Sam Refinment Bounding Boxes')
+            out_mask = self.custom_sam_refinement(frame,out_mask)
 
         final_mask = np.zeros_like(out_mask)
         
@@ -107,25 +112,64 @@ class BaseTracker:
 
         # print(f'max memory allocated: {torch.cuda.max_memory_allocated()/(2**20)} MB')
 
-        return final_mask, final_mask, painted_image
+        return final_mask, logits, painted_image
+    
+    def compute_bounding_box(self,segmentation_mask):
+        # Get the indices where the segmentation mask is non-zero
+        nonzero_indices = np.nonzero(segmentation_mask)
+        
+        # Calculate the bounding box coordinates
+        min_row = np.min(nonzero_indices[0])
+        max_row = np.max(nonzero_indices[0])
+        min_col = np.min(nonzero_indices[1])
+        max_col = np.max(nonzero_indices[1])
+        
+        # Return the bounding box coordinates as a tuple
+        bounding_box = [min_col,min_row, max_col, max_row]
+        return bounding_box
+    
 
     @torch.no_grad()
-    def custom_sam_refinement(self, frame, logits, ti):
-        """
-        refine segmentation results with mask prompt
-        """
-        for i in range(0,logits.size(dim=0)):
-            # convert to 1, 256, 256
-            self.sam_model.sam_controler.set_image(frame)
-            mode = 'mask'
-            ind_logits = logits[i].unsqueeze(0)
-            ind_logits = self.resizer(ind_logits).cpu().numpy()
-            prompts = {'mask_input': ind_logits}    # 1 256 256
-            masks, scores, logits_out = self.sam_model.sam_controler.predict(prompts, mode, multimask=True)  # masks (n, h, w), scores (n,), logits (n, 256, 256)
-            painted_image = mask_painter(frame, masks[np.argmax(scores)].astype('uint8'), mask_alpha=0.8)
-            painted_image = Image.fromarray(painted_image)
-            painted_image.save(f'./result/refinement/obj{i}-{ti:05d}.png')
-            self.sam_model.sam_controler.reset_image()
+    def custom_sam_refinement(self, frame, out_mask):
+        
+        all_masks_separated = []
+        all_mask_position = []
+        for i, v in enumerate(list(np.unique(out_mask))):
+            current_mask = np.zeros_like(out_mask)
+            current_mask[out_mask == v] = 1
+            all_masks_separated.append(current_mask)
+            all_mask_position.append(v)
+
+        self.sam_model.sam_controler.set_image(frame)
+        bounding_boxes = [self.compute_bounding_box(mask) for mask in all_masks_separated]
+        bounding_boxes = torch.tensor(bounding_boxes, device= self.sam_model.sam_controler.predictor.device)
+        transformed_boxes = self.sam_model.sam_controler.predictor.transform.apply_boxes_torch(bounding_boxes, frame.shape[:2])
+        mode = 'bounding_boxes'
+        prompts = {'bounding_boxes': transformed_boxes}
+        masksout, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
+        final_mask = np.zeros_like(out_mask)
+        for v, mask in zip(all_mask_position,masksout.numpy()):
+            final_mask +=  mask.squeeze(0).astype('uint8') * v
+        self.sam_model.sam_controler.reset_image()
+        return final_mask
+
+    # @torch.no_grad()
+    # def custom_sam_refinement(self, frame, logits, ti):
+    #     """
+    #     refine segmentation results with mask prompt
+    #     """
+    #     for i in range(0,logits.size(dim=0)):
+    #         # convert to 1, 256, 256
+    #         self.sam_model.sam_controler.set_image(frame)
+    #         mode = 'mask'
+    #         ind_logits = logits[i].unsqueeze(0)
+    #         ind_logits = self.resizer(ind_logits).cpu().numpy()
+    #         prompts = {'mask_input': ind_logits}    # 1 256 256
+    #         masks, scores, logits_out = self.sam_model.sam_controler.predict(prompts, mode, multimask=True)  # masks (n, h, w), scores (n,), logits (n, 256, 256)
+    #         painted_image = mask_painter(frame, masks[np.argmax(scores)].astype('uint8'), mask_alpha=0.8)
+    #         painted_image = Image.fromarray(painted_image)
+    #         painted_image.save(f'./result/refinement/obj{i}-{ti:05d}.png')
+    #         self.sam_model.sam_controler.reset_image()
 
     @torch.no_grad()
     def sam_refinement(self, frame, logits, ti):
