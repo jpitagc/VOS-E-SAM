@@ -50,6 +50,7 @@ class BaseTracker:
         self.sam_model = sam_model
         self.resizer = Resize([256, 256])
         self.sam_refinement_mode = sam_mode
+        self.update_vos_mem = True
 
         if sam_model: print('Sam Refinement ACTIVATED. Mode: '+ self.sam_refinement_mode)
         else: print('Sam Refinement NOT ACTIVATED')
@@ -100,6 +101,9 @@ class BaseTracker:
         if first_frame_annotation is None and self.sam_model:
             #print('Sam Refinment. Mode: ' + self.sam_refinement_mode)
             out_mask = self.custom_sam_refinement(frame,out_mask)
+            if self.update_vos_mem: 
+                print('Updating Memory post Refinment')
+                self.tracker.step(frame_tensor, torch.Tensor(out_mask).to(self.device), self.tracker.all_labels)
 
         final_mask = np.zeros_like(out_mask)
         
