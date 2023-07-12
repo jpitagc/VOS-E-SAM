@@ -17,10 +17,11 @@ from tools.painter import mask_painter
 from tools.base_segmenter import BaseSegmenter
 from torchvision.transforms import Resize
 import progressbar
+import cv2
 
 
 class BaseTracker:
-    def __init__(self, xmem_checkpoint, device, sam_model=None, model_type=None) -> None:
+    def __init__(self, xmem_checkpoint, device, sam_model=None, sam_mode = None, model_type=None) -> None:
         """
         device: model device
         xmem_checkpoint: checkpoint of XMem model
@@ -44,11 +45,14 @@ class BaseTracker:
         self.mapper = MaskMapper()
         self.initialised = False
 
-        if sam_model: print('Sam Refinement ACTIVATED')
-        else: print('Sam Refinement NOT ACTIVATED')
         # # SAM-based refinement
+        if sam_model:  assert sam_mode in ['point','bbox'], 'Sam Refinment Mode must be point or bbox'
         self.sam_model = sam_model
         self.resizer = Resize([256, 256])
+        self.sam_refinement_mode = sam_mode
+
+        if sam_model: print('Sam Refinement ACTIVATED. Mode: '+ self.sam_refinement_mode)
+        else: print('Sam Refinement NOT ACTIVATED')
 
     @torch.no_grad()
     def resize_mask(self, mask):
@@ -94,7 +98,7 @@ class BaseTracker:
         out_mask = (out_mask.detach().cpu().numpy()).astype(np.uint8)
 
         if first_frame_annotation is None and self.sam_model:
-            print('Sam Refinment Bounding Boxes')
+            #print('Sam Refinment. Mode: ' + self.sam_refinement_mode)
             out_mask = self.custom_sam_refinement(frame,out_mask)
 
         final_mask = np.zeros_like(out_mask)
@@ -128,6 +132,38 @@ class BaseTracker:
         bounding_box = [min_col,min_row, max_col, max_row]
         return bounding_box
     
+    def get_best_point_of_interest(self,segmentation_mask):
+        # Find contours in the segmentation mask
+        points = []
+        contours, _ = cv2.findContours(segmentation_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for contour in contours:
+            # Extract pouints from moments
+            M = cv2.moments(contour)
+            if M["m00"] != 0: points.append([int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"])])
+            else: 
+                print('Zero division')
+                points.append([int(M["m10"]), int(M["m01"])])
+
+        return np.array(points).astype('int')
+
+    # def get_best_point_of_interest(self,segmentation_mask):
+    #     # Find contours in the segmentation mask
+    #     contours, _ = cv2.findContours(segmentation_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    #     # Calculate the area of each contour
+    #     contour_areas = [cv2.contourArea(contour) for contour in contours]
+
+    #     # Find the index of the contour with the largest area
+    #     max_area_index = np.argmax(contour_areas)
+
+    #     # Extract the bounding box coordinates of the contour
+    #     x, y, w, h = cv2.boundingRect(contours[max_area_index])
+
+    #     # Calculate the centroid of the bounding box
+    #     centroid_x = x + (w / 2)
+    #     centroid_y = y + (h / 2)
+
+    #     return np.array([[centroid_x, centroid_y]]).astype('int')
 
     @torch.no_grad()
     def custom_sam_refinement(self, frame, out_mask):
@@ -135,21 +171,39 @@ class BaseTracker:
         all_masks_separated = []
         all_mask_position = []
         for i, v in enumerate(list(np.unique(out_mask))):
+            if v == 0: continue
             current_mask = np.zeros_like(out_mask)
             current_mask[out_mask == v] = 1
             all_masks_separated.append(current_mask)
             all_mask_position.append(v)
 
         self.sam_model.sam_controler.set_image(frame)
-        bounding_boxes = [self.compute_bounding_box(mask) for mask in all_masks_separated]
-        bounding_boxes = torch.tensor(bounding_boxes, device= self.sam_model.sam_controler.predictor.device)
-        transformed_boxes = self.sam_model.sam_controler.predictor.transform.apply_boxes_torch(bounding_boxes, frame.shape[:2])
-        mode = 'bounding_boxes'
-        prompts = {'bounding_boxes': transformed_boxes}
-        masksout, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
+
+        if self.sam_refinement_mode == 'bbox':
+            bounding_boxes = [self.compute_bounding_box(mask) for mask in all_masks_separated]
+            bounding_boxes = torch.tensor(bounding_boxes, device= self.sam_model.sam_controler.predictor.device)
+            transformed_boxes = self.sam_model.sam_controler.predictor.transform.apply_boxes_torch(bounding_boxes, frame.shape[:2])
+            mode = 'bounding_boxes'
+            prompts = {'bounding_boxes': transformed_boxes}
+            masksout, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
+            masksout = masksout.numpy()
+
+        elif self.sam_refinement_mode == 'point':
+            points_of_interest = [self.get_best_point_of_interest(mask) for mask in all_masks_separated]
+            masksout = []
+            for points in points_of_interest:
+                mode = 'point'
+                prompts = {
+                    'point_coords': points,
+                    'point_labels': np.ones((points.shape[0])).astype('uint8'), 
+                }
+                masksout_ind, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
+                masksout.append(masksout_ind)
+
         final_mask = np.zeros_like(out_mask)
-        for v, mask in zip(all_mask_position,masksout.numpy()):
+        for v, mask in zip(all_mask_position,masksout):
             final_mask +=  mask.squeeze(0).astype('uint8') * v
+
         self.sam_model.sam_controler.reset_image()
         return final_mask
 
