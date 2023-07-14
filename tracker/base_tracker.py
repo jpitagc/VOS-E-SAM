@@ -8,7 +8,7 @@ import torch
 import yaml
 import torch.nn.functional as F
 from tracker.model.network import XMem
-from inference.inference_core import InferenceCore
+from tracker.inference.inference_core import InferenceCore
 from tracker.util.mask_mapper import MaskMapper
 from torchvision import transforms
 from tracker.util.range_transform import im_normalization
@@ -101,9 +101,9 @@ class BaseTracker:
         if first_frame_annotation is None and self.sam_model:
             #print('Sam Refinment. Mode: ' + self.sam_refinement_mode)
             out_mask = self.custom_sam_refinement(frame,out_mask)
-            if self.update_vos_mem: 
-                print('Updating Memory post Refinment')
-                self.tracker.step(frame_tensor, torch.Tensor(out_mask).to(self.device), self.tracker.all_labels)
+            # if self.update_vos_mem: 
+            #     print('Updating Memory post Refinment')
+            #     self.tracker.step(frame_tensor, torch.Tensor(out_mask).to(self.device), self.tracker.all_labels)
 
         final_mask = np.zeros_like(out_mask)
         

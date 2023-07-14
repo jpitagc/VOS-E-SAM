@@ -1,4 +1,4 @@
-from inference.memory_manager import MemoryManager
+from tracker.inference.memory_manager import MemoryManager
 from model.network import XMem
 from model.aggregate import aggregate
 
