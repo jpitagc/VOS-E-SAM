@@ -8,7 +8,7 @@ import torch
 import yaml
 import torch.nn.functional as F
 from tracker.model.network import XMem
-from inference.inference_core import InferenceCore
+from tracker.inference.inference_core import InferenceCore
 from tracker.util.mask_mapper import MaskMapper
 from torchvision import transforms
 from tracker.util.range_transform import im_normalization
@@ -186,7 +186,7 @@ class BaseTracker:
             mode = 'bounding_boxes'
             prompts = {'bounding_boxes': transformed_boxes}
             masksout, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
-            masksout = masksout.numpy()
+            masksout = masksout.detach().cpu().numpy()
 
         elif self.sam_refinement_mode == 'point':
             points_of_interest = [self.get_best_point_of_interest(mask) for mask in all_masks_separated]
