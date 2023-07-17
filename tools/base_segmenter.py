@@ -57,7 +57,7 @@ class BaseSegmenter:
         whem mask_outputs=True, mask_input=logits[np.argmax(scores), :, :][None, :, :]
         """
         assert self.embedded, 'prediction is called before set_image (feature embedding).'
-        assert mode in ['point', 'mask', 'both','bbox','bounding_boxes'], 'mode must be point, mask,bbox, or both'
+        assert mode in ['point', 'mask', 'both','bbox','bounding_boxes','mask_bbox','mask_bbox_neg'], 'mode must be point, mask,bbox, or both'
         
         if mode == 'point':
             masks, scores, logits = self.predictor.predict(point_coords=prompts['point_coords'], 
@@ -66,7 +66,6 @@ class BaseSegmenter:
         elif mode == 'mask':
             masks, scores, logits = self.predictor.predict(mask_input=prompts['mask_input'], 
                                 multimask_output=multimask)
-            
         elif mode == 'bbox':
             masks, scores, logits = self.predictor.predict(box=prompts['bounding_box'], 
                                 multimask_output=multimask)
@@ -80,6 +79,22 @@ class BaseSegmenter:
                                 point_labels=prompts['point_labels'], 
                                 box=prompts['bounding_box'], 
                                 multimask_output=multimask)
+        elif mode == 'mask_bbox':
+            masks, scores, logits = self.predictor.predict(mask_input=prompts['mask_input'], 
+                                box=prompts['bounding_box'],
+                                multimask_output=multimask)
+        elif mode == 'mask_bbox_neg':
+            if ('point_coords' in prompts):
+                masks, scores, logits = self.predictor.predict(mask_input=prompts['mask_input'], 
+                                    box=prompts['bounding_box'],
+                                    point_coords=prompts['point_coords'], 
+                                    point_labels=prompts['point_labels'], 
+                                    multimask_output=multimask)
+            else: 
+                masks, scores, logits = self.predictor.predict(mask_input=prompts['mask_input'], 
+                                box=prompts['bounding_box'],
+                                multimask_output=multimask)
+
         else:
             raise("Not implement now!")
         # masks (n, h, w), scores (n,), logits (n, 256, 256)

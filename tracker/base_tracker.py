@@ -48,7 +48,7 @@ class BaseTracker:
         self.initialised = False
 
         # # SAM-based refinement
-        if sam_model:  assert sam_mode in ['point','bbox','both','both_neg'], 'Sam Refinment Mode must be point or bbox'
+        if sam_model:  assert sam_mode in ['point','bbox','both','both_neg','mask_bbox','mask_bbox_pos_neg','mask_bbox_neg'], 'Sam Refinment Mode must be point or bbox'
         self.sam_model = sam_model
         self.resizer = Resize([256, 256])
         self.sam_refinement_mode = sam_mode
@@ -95,31 +95,14 @@ class BaseTracker:
         #    print('Sam Refineent entry', logits.size())
         #    out_mask = self.custom_sam_refinement(frame, logits, 1)    
         
-        # convert to mask
+
         out_mask = torch.argmax(probs, dim=0)
         out_mask = (out_mask.detach().cpu().numpy()).astype(np.uint8)
         
-        ###########
-        ###########
-        final_mask = np.zeros_like(out_mask)
-        
-        # map back
-        for k, v in self.mapper.remappings.items():
-            final_mask[out_mask == v] = k
-
-        num_objs = final_mask.max()
-        painted_image = frame
-        for obj in range(1, num_objs+1):
-            if np.max(final_mask==obj) == 0:
-                continue
-            painted_image = mask_painter(painted_image, (final_mask==obj).astype('uint8'), mask_color=obj+1)
-        logits = painted_image
-        ###########
-        ######3####
 
         if first_frame_annotation is None and self.sam_model:
             #print('Sam Refinment. Mode: ' + self.sam_refinement_mode)
-            out_mask = self.custom_sam_refinement(frame,out_mask)
+            out_mask = self.custom_sam_refinement(frame,out_mask, logits)
 
         final_mask = np.zeros_like(out_mask)
         
@@ -137,6 +120,20 @@ class BaseTracker:
         # print(f'max memory allocated: {torch.cuda.max_memory_allocated()/(2**20)} MB')
 
         return final_mask, logits, painted_image
+
+    def mask_resizer(self,mask):
+        (xsize,ysize) = mask.shape
+        ratio = (xsize/ysize) * 256
+        mask = mask.unsqueeze(0)
+        self.resizer = Resize([int(ratio),256])
+        mask = self.resizer(mask)
+        mask = mask.cpu().numpy().squeeze()
+        pad_with = ((0,256 - mask.shape[0]),(0,256 - mask.shape[1]))
+        new_mask = np.pad(mask,pad_with, mode = 'constant', constant_values = np.min(mask))
+        return new_mask
+
+
+            
     
     def compute_bounding_box(self,segmentation_mask):
         # Get the indices where the segmentation mask is non-zero
@@ -151,8 +148,21 @@ class BaseTracker:
         # Return the bounding box coordinates as a tuple
         bounding_box = [min_x,min_y, max_x, max_y]
         return bounding_box
-    
-    def get_best_point_of_interest(self,segmentation_mask):
+
+    def contour_to_line(self,contour):
+        # Approximate the contour with a polygonal curve
+        epsilon = 0.02 * cv2.arcLength(contour, True)
+        approx = cv2.approxPolyDP(contour, epsilon, True)
+
+        # Convert the polygonal curve to a line
+        line = approx.reshape(-1, 2)
+
+        return line.tolist()
+    def get_best_point_of_interest(self,segmentation_mask): 
+        '''
+        Returns the centroid of the mask
+        '''
+
         # Find contours in the segmentation mask
         #print('Mask')
         points = []
@@ -170,6 +180,9 @@ class BaseTracker:
         return np.array(points).astype('int')
     
     def get_very_best_point_of_interest(self, segmentation_mask):
+        '''
+        Retrurns the centroid corrected to the closest point inside the mask if centroid falls out
+        '''
         # Find contours in the segmentation mask
         points = []
         contours, _ = cv2.findContours(segmentation_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -183,19 +196,22 @@ class BaseTracker:
             centroid_y = int(M["m01"] / M["m00"]) if M["m00"] != 0 else int(M["m01"])
             
             if not segmentation_mask[centroid_y, centroid_x]:
-                print(f'Correcting Point: {centroid_x},{centroid_y}')
+                #print(f'Correcting Point: {centroid_x},{centroid_y}')
                 # Centroid point falls outside the mask, find nearest point within the mask
                 dist = np.sqrt((centroid_x - np.where(segmentation_mask)[1])**2 +
                             (centroid_y - np.where(segmentation_mask)[0])**2)
                 nearest_point_idx = np.argmin(dist)
                 centroid_x = np.where(segmentation_mask)[1][nearest_point_idx]
                 centroid_y = np.where(segmentation_mask)[0][nearest_point_idx]
-                print(f'To: {centroid_x},{centroid_y}')
+                #print(f'To: {centroid_x},{centroid_y}')
             points.append([centroid_x, centroid_y])
 
         return np.array(points).astype('int')
 
     def get_very_very_best_point_of_interest(self,segmentation_mask, num_points = 5):
+        '''
+        Returns the centroid corrected to the closest point inside the mask if centroid falls out plus a number of points from the contour
+        '''
         # Find contours in the segmentation mask
         points = []
         contours, _ = cv2.findContours(segmentation_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -208,14 +224,14 @@ class BaseTracker:
             centroid_y = int(M["m01"] / M["m00"]) if M["m00"] != 0 else int(M["m01"])
             
             if not segmentation_mask[centroid_y, centroid_x]:
-                print(f'Correcting Point: {centroid_x},{centroid_y}')
+                #print(f'Correcting Point: {centroid_x},{centroid_y}')
                 # Centroid point falls outside the mask, find nearest point within the mask
                 dist = np.sqrt((centroid_x - np.where(segmentation_mask)[1])**2 +
                             (centroid_y - np.where(segmentation_mask)[0])**2)
                 nearest_point_idx = np.argmin(dist)
                 centroid_x = np.where(segmentation_mask)[1][nearest_point_idx]
                 centroid_y = np.where(segmentation_mask)[0][nearest_point_idx]
-                print(f'To: {centroid_x},{centroid_y}')
+                #print(f'To: {centroid_x},{centroid_y}')
             points.append([centroid_x, centroid_y])
 
             # Include additional representative points within the contour
@@ -229,6 +245,58 @@ class BaseTracker:
                     points.append([x, y])
 
         return np.array(points).astype('int')
+        
+    def get_points_BOR_image(self,image, segmentation_masks, max_keypoints=1000):
+        # Create an ORB object
+        orb = cv2.ORB_create(max_keypoints)
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+        # Find keypoints in the image
+        keypoints = orb.detect(image, None)
+        all_points = []
+        for segmentation_mask in segmentation_masks:
+            # Filter keypoints based on the segmentation mask
+            keypoints_in_mask = []
+            for keypoint in keypoints:
+                x, y = map(int, keypoint.pt)
+                if segmentation_mask[y, x]:
+                    keypoints_in_mask.append(keypoint)
+            keypointsCorrected, _ = orb.compute(image, keypoints_in_mask)
+            all_points.append([(int(keypoint.pt[0]), int(keypoint.pt[1])) for keypoint in keypointsCorrected])
+            
+        return np.array(all_points).astype('int')
+    
+    def get_best_points_of_interest_PolyLine(self,segmentation_mask):
+        '''
+        Returns the centroid corrected to the closest point inside the mask if centroid falls out plus a number of points from the contour
+        '''
+        # Find contours in the segmentation mask
+        contours, _ = cv2.findContours(segmentation_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        all_points = [] 
+        for contour in contours:
+            # Extract points from moments
+            if cv2.contourArea(contour) <= 100:
+                continue
+            M = cv2.moments(contour)
+            centroid_x = int(M["m10"] / M["m00"]) if M["m00"] != 0 else int(M["m10"])
+            centroid_y = int(M["m01"] / M["m00"]) if M["m00"] != 0 else int(M["m01"])
+            
+            if not segmentation_mask[centroid_y, centroid_x]:
+                print(f'Correcting Point: {centroid_x},{centroid_y}')
+                # Centroid point falls outside the mask, find nearest point within the mask
+                dist = np.sqrt((centroid_x - np.where(segmentation_mask)[1])**2 +
+                            (centroid_y - np.where(segmentation_mask)[0])**2)
+                nearest_point_idx = np.argmin(dist)
+                centroid_x = np.where(segmentation_mask)[1][nearest_point_idx]
+                centroid_y = np.where(segmentation_mask)[0][nearest_point_idx]
+                print(f'To: {centroid_x},{centroid_y}')
+            
+            points = [point for point in self.contour_to_line(contour) if segmentation_mask[point[1], point[0]] != 0]
+            all_points.append([centroid_x, centroid_y])
+            all_points += points
+
+        return np.array(all_points).astype('int')
+
+
     # def get_best_point_of_interest(self,segmentation_mask):
     #     # Find contours in the segmentation mask
     #     contours, _ = cv2.findContours(segmentation_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -295,7 +363,7 @@ class BaseTracker:
     
 
     @torch.no_grad()
-    def custom_sam_refinement(self, frame, out_mask):
+    def custom_sam_refinement(self, frame, out_mask, logits = None):
         
         all_masks_separated = []
         all_mask_position = []
@@ -356,7 +424,7 @@ class BaseTracker:
                 
         elif self.sam_refinement_mode == 'both_neg':
             bounding_boxes = [self.compute_bounding_box(mask) for mask in all_masks_separated]
-            points_of_interest = [self.get_very_very_best_point_of_interest(mask,5) for mask in all_masks_separated]
+            points_of_interest = [self.get_best_points_of_interest_PolyLine(mask) for mask in all_masks_separated]
             negative_points = self.find_neg_points(bounding_boxes,points_of_interest)
             self.print_image_bbox(out_mask,bounding_boxes,points_of_interest)
             masksout = []
@@ -380,6 +448,83 @@ class BaseTracker:
                 else: 
                     masksout_ind = np.zeros_like(out_mask[None,:])
                 masksout.append(masksout_ind)
+
+        elif self.sam_refinement_mode == 'mask_bbox':
+            bounding_boxes = [self.compute_bounding_box(mask) for mask in all_masks_separated]
+            all_masks = [self.mask_resizer(mask.cpu()) for mask in logits[1:]]
+            self.print_image_bbox(out_mask,bounding_boxes,None)
+            masksout = []
+            for bbox,mask in zip(bounding_boxes,all_masks):
+                plt.imshow(mask)
+                plt.show()
+                bbox = [bbox[0] - 10,bbox[1] - 10,bbox[2] + 10,bbox[3] + 10 ]
+                mode = 'mask_bbox'
+                prompts = {
+                    'bounding_box': np.array(bbox)[None,:],
+                    'mask_input': mask[None,:,:],
+                }
+                masksout_ind, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
+                plt.imshow(np.squeeze(logits))
+                plt.show()
+                self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),[bbox],None, None)
+                masksout.append(masksout_ind)
+        
+        elif self.sam_refinement_mode == 'mask_bbox_pos_neg':
+            bounding_boxes = [self.compute_bounding_box(mask) for mask in all_masks_separated]
+            all_masks = [self.mask_resizer(mask.cpu()) for mask in logits[1:]]
+            points_of_interest = [self.get_best_points_of_interest_PolyLine(mask) for mask in all_masks_separated]
+            negative_points = self.find_neg_points(bounding_boxes,points_of_interest)
+            #self.print_image_bbox(out_mask,bounding_boxes,points_of_interest)
+            masksout = []
+            for bbox,mask,pos_points,neg_points in zip(bounding_boxes,all_masks,points_of_interest,negative_points):
+                #plt.imshow(mask)
+                #plt.show()
+                bbox = [bbox[0] - 10,bbox[1] - 10,bbox[2] + 10,bbox[3] + 10 ]
+                mode = 'mask_bbox_neg'
+                prompts = {
+                    'bounding_box': np.array(bbox)[None,:],
+                    'mask_input': mask[None,:,:],
+                }
+                if pos_points.size > 0:
+                    if neg_points.size > 0: 
+                        prompts['point_coords'] = np.concatenate((pos_points,neg_points))
+                        prompts['point_labels'] = np.concatenate((np.ones((pos_points.shape[0])).astype('uint8'),np.zeros((neg_points.shape[0])).astype('uint8') ))
+                    else:
+                        prompts['point_coords'] = pos_points
+                        prompts['point_labels'] = np.ones((pos_points.shape[0])).astype('uint8')
+
+                masksout_ind, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
+                #plt.imshow(np.squeeze(logits))
+                #plt.show()
+                #self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),[bbox],[pos_points], [neg_points] if neg_points.size > 0 else None)
+                masksout.append(masksout_ind)
+
+        elif self.sam_refinement_mode == 'mask_bbox_neg':
+            bounding_boxes = [self.compute_bounding_box(mask) for mask in all_masks_separated]
+            all_masks = [self.mask_resizer(mask.cpu()) for mask in logits[1:]]
+            points_of_interest = [self.get_best_points_of_interest_PolyLine(mask) for mask in all_masks_separated]
+            negative_points = self.find_neg_points(bounding_boxes,points_of_interest)
+            #self.print_image_bbox(out_mask,bounding_boxes,None)
+            masksout = []
+            for bbox,mask,neg_points in zip(bounding_boxes,all_masks,negative_points):
+                plt.imshow(mask)
+                plt.show()
+                bbox = [bbox[0] - 10,bbox[1] - 10,bbox[2] + 10,bbox[3] + 10 ]
+                mode = 'mask_bbox_neg'
+                prompts = {
+                    'bounding_box': np.array(bbox)[None,:],
+                    'mask_input': mask[None,:,:],
+                }
+                if neg_points.size > 0: 
+                        prompts['point_coords']  = neg_points
+                        prompts['point_labels'] = np.zeros((neg_points.shape[0])).astype('uint8')
+
+                masksout_ind, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
+                #plt.imshow(np.squeeze(logits))
+                #plt.show()
+                #self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),[bbox],None, [neg_points] if neg_points.size > 0 else None)
+                masksout.append(masksout_ind)
+            
 
         final_mask = np.zeros_like(out_mask)
         for v, mask in zip(all_mask_position,masksout):
