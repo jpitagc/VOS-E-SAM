@@ -20,6 +20,7 @@ import progressbar
 import cv2
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+from skimage import morphology
 
 
 class BaseTracker:
@@ -158,6 +159,23 @@ class BaseTracker:
         line = approx.reshape(-1, 2)
 
         return line.tolist()
+
+    def mask_to_skeleton(self,mask):
+        plt.imshow(mask)
+        plt.show()
+        skeleton = morphology.skeletonize(mask)
+        plt.imshow(skeleton)
+        plt.show()
+        nonzero_coords = np.nonzero(skeleton)
+        coords_list = [(x,y) for x,y in zip(nonzero_coords[0],nonzero_coords[1])]
+        #number = 100 if len(coords_list) > 99 else len(coordlist)
+        #points = np.random.choice(np.array(coords_list), size = number, replace = False)
+        #new_mask = np.zeros((mask.shape[0], mask.shape[1]), dtype = npuint8)
+        #new_mask[points[:,0], points[:,1]] = 1
+        #plt.imshow(new_mask)
+        #plt.show()
+        return np.array(coords_list)
+
     def get_best_point_of_interest(self,segmentation_mask): 
         '''
         Returns the centroid of the mask
@@ -281,14 +299,14 @@ class BaseTracker:
             centroid_y = int(M["m01"] / M["m00"]) if M["m00"] != 0 else int(M["m01"])
             
             if not segmentation_mask[centroid_y, centroid_x]:
-                print(f'Correcting Point: {centroid_x},{centroid_y}')
+                #print(f'Correcting Point: {centroid_x},{centroid_y}')
                 # Centroid point falls outside the mask, find nearest point within the mask
                 dist = np.sqrt((centroid_x - np.where(segmentation_mask)[1])**2 +
                             (centroid_y - np.where(segmentation_mask)[0])**2)
                 nearest_point_idx = np.argmin(dist)
                 centroid_x = np.where(segmentation_mask)[1][nearest_point_idx]
                 centroid_y = np.where(segmentation_mask)[0][nearest_point_idx]
-                print(f'To: {centroid_x},{centroid_y}')
+                #print(f'To: {centroid_x},{centroid_y}')
             
             points = [point for point in self.contour_to_line(contour) if segmentation_mask[point[1], point[0]] != 0]
             all_points.append([centroid_x, centroid_y])
@@ -391,16 +409,17 @@ class BaseTracker:
 
         elif self.sam_refinement_mode == 'point':
             points_of_interest = [self.get_best_point_of_interest(mask) for mask in all_masks_separated]
+            points_of_interest_skeleton = [self.mask_to_skeleton(mask) for mask in all_masks_separated]
             #self.print_image_bbox(out_mask,None,points_of_interest)
             masksout = []
-            for points in points_of_interest:
+            for points in points_of_interest_skeleton:
                 mode = 'point'
                 prompts = {
                     'point_coords': points,
                     'point_labels': np.ones((points.shape[0])).astype('uint8'), 
                 }
                 masksout_ind, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
-                #self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),None,[points])
+                self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),None,None)
                 masksout.append(masksout_ind)
 
         elif self.sam_refinement_mode == 'both':
@@ -474,11 +493,11 @@ class BaseTracker:
             all_masks = [self.mask_resizer(mask.cpu()) for mask in logits[1:]]
             points_of_interest = [self.get_best_points_of_interest_PolyLine(mask) for mask in all_masks_separated]
             negative_points = self.find_neg_points(bounding_boxes,points_of_interest)
-            #self.print_image_bbox(out_mask,bounding_boxes,points_of_interest)
+            self.print_image_bbox(out_mask,bounding_boxes,points_of_interest)
             masksout = []
             for bbox,mask,pos_points,neg_points in zip(bounding_boxes,all_masks,points_of_interest,negative_points):
-                #plt.imshow(mask)
-                #plt.show()
+                plt.imshow(mask)
+                plt.show()
                 bbox = [bbox[0] - 10,bbox[1] - 10,bbox[2] + 10,bbox[3] + 10 ]
                 mode = 'mask_bbox_neg'
                 prompts = {
@@ -494,9 +513,9 @@ class BaseTracker:
                         prompts['point_labels'] = np.ones((pos_points.shape[0])).astype('uint8')
 
                 masksout_ind, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
-                #plt.imshow(np.squeeze(logits))
-                #plt.show()
-                #self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),[bbox],[pos_points], [neg_points] if neg_points.size > 0 else None)
+                plt.imshow(np.squeeze(logits))
+                plt.show()
+                self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),[bbox],[pos_points], [neg_points] if neg_points.size > 0 else None)
                 masksout.append(masksout_ind)
 
         elif self.sam_refinement_mode == 'mask_bbox_neg':
