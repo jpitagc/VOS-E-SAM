@@ -21,6 +21,9 @@ import cv2
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from skimage import morphology
+import networkx as nx
+from scipy.ndimage import convolve
+from sklearn.cluster import DBSCAN
 
 
 class BaseTracker:
@@ -160,21 +163,21 @@ class BaseTracker:
 
         return line.tolist()
 
-    def mask_to_skeleton(self,mask):
-        plt.imshow(mask)
-        plt.show()
-        skeleton = morphology.skeletonize(mask)
-        plt.imshow(skeleton)
-        plt.show()
-        nonzero_coords = np.nonzero(skeleton)
-        coords_list = [(x,y) for x,y in zip(nonzero_coords[0],nonzero_coords[1])]
-        #number = 100 if len(coords_list) > 99 else len(coordlist)
-        #points = np.random.choice(np.array(coords_list), size = number, replace = False)
-        #new_mask = np.zeros((mask.shape[0], mask.shape[1]), dtype = npuint8)
-        #new_mask[points[:,0], points[:,1]] = 1
-        #plt.imshow(new_mask)
-        #plt.show()
-        return np.array(coords_list)
+    # def mask_to_skeleton(self,mask):
+    #     plt.imshow(mask)
+    #     plt.show()
+    #     skeleton = morphology.skeletonize(mask)
+    #     plt.imshow(skeleton)
+    #     plt.show()
+    #     nonzero_coords = np.nonzero(skeleton)
+    #     coords_list = [(x,y) for x,y in zip(nonzero_coords[0],nonzero_coords[1])]
+    #     #number = 100 if len(coords_list) > 99 else len(coordlist)
+    #     #points = np.random.choice(np.array(coords_list), size = number, replace = False)
+    #     #new_mask = np.zeros((mask.shape[0], mask.shape[1]), dtype = npuint8)
+    #     #new_mask[points[:,0], points[:,1]] = 1
+    #     #plt.imshow(new_mask)
+    #     #plt.show()
+    #     return np.array(coords_list)
 
     def get_best_point_of_interest(self,segmentation_mask): 
         '''
@@ -314,7 +317,97 @@ class BaseTracker:
 
         return np.array(all_points).astype('int')
 
+    def find_endpoints(self,skeleton,kernel):
+        neighbors = convolve(skeleton.astype(int), kernel, mode='constant', cval=0)
+        return [tuple(point) for point in np.transpose(np.nonzero((skeleton & (neighbors == 1))))]
+    
+    def find_branchpoints(self,skeleton,kernel):
+        neighbors = convolve(skeleton.astype(int), kernel, mode='constant', cval=0)
+        return [tuple(point) for point in np.transpose(np.nonzero((skeleton & (neighbors >= 3))))]
+    
+    def skeleton_to_graph(self,skeleton):
+        graph = nx.Graph()
+        for y, x in np.transpose(np.nonzero(skeleton)):
+            graph.add_node((y, x))
+        for y, x in graph.nodes:
+            for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]:
+                if ((y + dy, x + dx) in graph.nodes):
+                    graph.add_edge((y, x), (y + dy, x + dx))      
+        return graph
+    
+    def find_midpoints(self, graph, endpoints, branchpoints):
+        midpoints = []
+        
+        for ep in endpoints:
+            closest_bp = None
+            shortest_path = None
+            for bp in branchpoints:
+                if nx.has_path(graph, ep, bp):
+                    path = nx.shortest_path(graph, ep, bp)
+                    if shortest_path is None or len(path) < len(shortest_path):
+                        closest_bp = bp
+                        shortest_path = path
+            if shortest_path is not None:
+                midpoint = shortest_path[len(shortest_path) // 2]
+                midpoints.append(midpoint)
+        
+        for i in range(len(branchpoints)):
+            for j in range(i+1, len(branchpoints)):
+                if nx.has_path(graph, branchpoints[i], branchpoints[j]):
+                    path = nx.shortest_path(graph, branchpoints[i], branchpoints[j])
+                    # Check if the path contains other branch points
+                    if not any([(node in path) for node in branchpoints if node not in [branchpoints[i], branchpoints[j]]]):
+                        midpoint = path[len(path) // 2]
+                        midpoints.append(midpoint)
+        return midpoints
+    
+    def get_points_skeleton(self,mask):
+        skeleton = morphology.skeletonize(mask)
+        kernel = np.array([[1, 1, 1],[1, 0, 1],[1, 1, 1]])
+        endpoints = self.find_endpoints(skeleton,kernel)
+        branchpoints = self.find_branchpoints(skeleton,kernel)
+        midpoints = self.find_midpoints(self.skeleton_to_graph(skeleton), endpoints, branchpoints)
+        return endpoints,branchpoints,midpoints,skeleton
+    
+    def filter_multiple_points(self,points):
+        points_array = np.array(points)
+        # Apply DBSCAN clustering
+        # Maximum distance to consider points as neighbors
+        # Minimum number of points in a neighborhood to be considered a core point
+        dbscan = DBSCAN(eps=5, min_samples=1)
+        labels = dbscan.fit_predict(points_array)
 
+        # Filter points based on cluster labels
+        unique_labels = set(labels)
+        filtered_points = [points_array[labels == label][0] for label in unique_labels if label != -1]
+        return filtered_points
+    
+    def get_skeleton_and_poly(self,mask):
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        all_points = [] 
+        for contour in contours:
+            # Extract points from moments
+            if cv2.contourArea(contour) <= 100:
+                continue
+            points = [point for point in self.contour_to_line(contour) if mask[point[1], point[0]] != 0]
+            all_points += points
+        endpoints,branchpoints,midpoints,skeleton = self.get_points_skeleton(mask)
+        all_skeleton_points = self.filter_multiple_points([(y, x) for x, y in endpoints + branchpoints + midpoints])
+        self.print_skeleton_poly_points(mask,skeleton,all_skeleton_points+ all_points)
+        return np.concatenate((np.array(all_skeleton_points).astype('int'),np.array(all_points).astype('int')))
+
+    def print_skeleton_poly_points(self, mask, skeleton, points):
+        canvas = np.zeros_like(mask, dtype=np.uint8)
+        # Assign color values to the masks
+        canvas[mask == 1] = 1  # First mask in red
+        canvas[skeleton == 1] = 2  # Second mask in green
+
+        # Display the superposed masks
+        fig, ax = plt.subplots(figsize=(15, 7))
+        ax.imshow(canvas)
+        x_points, y_points = zip(*points)  # Separate x and y coordinates
+        ax.scatter(x_points, y_points, color='blue', marker='o', s=20)
+        plt.show()
     # def get_best_point_of_interest(self,segmentation_mask):
     #     # Find contours in the segmentation mask
     #     contours, _ = cv2.findContours(segmentation_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -409,7 +502,7 @@ class BaseTracker:
 
         elif self.sam_refinement_mode == 'point':
             points_of_interest = [self.get_best_point_of_interest(mask) for mask in all_masks_separated]
-            points_of_interest_skeleton = [self.mask_to_skeleton(mask) for mask in all_masks_separated]
+            points_of_interest_skeleton = [self.get_skeleton_and_poly(mask) for mask in all_masks_separated]
             #self.print_image_bbox(out_mask,None,points_of_interest)
             masksout = []
             for points in points_of_interest_skeleton:
@@ -424,9 +517,10 @@ class BaseTracker:
 
         elif self.sam_refinement_mode == 'both':
             bounding_boxes = [self.compute_bounding_box(mask) for mask in all_masks_separated]
-            points_of_interest = [self.get_best_point_of_interest(mask) for mask in all_masks_separated]
-            #print(points_of_interest)
             #self.print_image_bbox(out_mask,bounding_boxes,points_of_interest)
+            points_of_interest = [self.get_skeleton_and_poly(mask) for mask in all_masks_separated]
+            #print(points_of_interest)
+            
             masksout = []
             for bbox,points in zip(bounding_boxes,points_of_interest):
                 if points.size > 0:
@@ -437,13 +531,13 @@ class BaseTracker:
                         'point_labels': np.ones((points.shape[0])).astype('uint8'), 
                     }
                     masksout_ind, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
-                    #self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),[bbox],[points])
+                    self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),[bbox],[points])
                 else: masksout_ind = np.zeros_like(out_mask[None,:])
                 masksout.append(masksout_ind)
                 
         elif self.sam_refinement_mode == 'both_neg':
             bounding_boxes = [self.compute_bounding_box(mask) for mask in all_masks_separated]
-            points_of_interest = [self.get_best_points_of_interest_PolyLine(mask) for mask in all_masks_separated]
+            points_of_interest = [self.get_skeleton_and_poly(mask) for mask in all_masks_separated]
             negative_points = self.find_neg_points(bounding_boxes,points_of_interest)
             self.print_image_bbox(out_mask,bounding_boxes,points_of_interest)
             masksout = []
@@ -491,8 +585,8 @@ class BaseTracker:
         elif self.sam_refinement_mode == 'mask_bbox_pos_neg':
             bounding_boxes = [self.compute_bounding_box(mask) for mask in all_masks_separated]
             all_masks = [self.mask_resizer(mask.cpu()) for mask in logits[1:]]
-            points_of_interest = [self.get_best_points_of_interest_PolyLine(mask) for mask in all_masks_separated]
-            negative_points = self.find_neg_points(bounding_boxes,points_of_interest)
+            points_of_interest = [self.get_skeleton_and_poly(mask) for mask in all_masks_separated]
+            negative_points = self.find_neg_points(bounding_boxes,[self.get_best_points_of_interest_PolyLine(mask) for mask in all_masks_separated])
             self.print_image_bbox(out_mask,bounding_boxes,points_of_interest)
             masksout = []
             for bbox,mask,pos_points,neg_points in zip(bounding_boxes,all_masks,points_of_interest,negative_points):
