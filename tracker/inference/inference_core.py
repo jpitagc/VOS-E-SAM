@@ -3,6 +3,7 @@ from model.network import XMem
 from model.aggregate import aggregate
 
 from tracker.util.tensor_util import pad_divide_by, unpad
+import time
 
 
 class InferenceCore:
@@ -42,6 +43,11 @@ class InferenceCore:
     def step(self, image, mask=None, valid_labels=None, end=False):
         # image: 3*H*W
         # mask: num_objects*H*W or None
+
+        #####------#####
+        start_time = time.time()
+        #####------#####
+
         self.curr_ti += 1
         image, self.pad = pad_divide_by(image, 16)
         image = image.unsqueeze(0) # add the batch dimension
@@ -54,11 +60,19 @@ class InferenceCore:
         ) and (not end)
         is_normal_update = (not self.deep_update_sync or not is_deep_update) and (not end)
 
+        #####------#####
+        bool_time = time.time()
+        #####------#####
+
         key, shrinkage, selection, f16, f8, f4 = self.network.encode_key(image, 
                                                     need_ek=(self.enable_long_term or need_segment), 
                                                     need_sk=is_mem_frame)
-        multi_scale_features = (f16, f8, f4)
+        #####------#####
+        encode_time = time.time()
+        #####------#####
 
+        multi_scale_features = (f16, f8, f4)
+        #print(f'Current ti {self.curr_ti}, Last mem ti{self.last_mem_ti}. Bools: mem_frame -> {is_mem_frame}, need_segment -> {need_segment}, is_deep_update -> {is_deep_update}, is_normal_update -> {is_normal_update} \n')
         # segment the current frame is needed
         if need_segment:
             memory_readout = self.memory.match_memory(key, selection).unsqueeze(0)
@@ -76,6 +90,10 @@ class InferenceCore:
                 self.memory.set_hidden(hidden)
         else:
             pred_prob_no_bg = pred_prob_with_bg = pred_logits_with_bg = pred_logits_no_bg = None
+
+        #####------#####
+        segment_time = time.time()
+        #####------#####
 
         # use the input mask if any
         if mask is not None:
@@ -97,18 +115,35 @@ class InferenceCore:
             # also create new hidden states
             self.memory.create_hidden_state(len(self.all_labels), key)
 
+        #####------#####
+        mask_time = time.time()
+        #####------#####
         # save as memory if needed
         if is_mem_frame:
             value, hidden = self.network.encode_value(image, f16, self.memory.get_hidden(), 
                                     pred_prob_with_bg[1:].unsqueeze(0), is_deep_update=is_deep_update)
+            #####------#####
+            encode_value_time = time.time()
+            #####------#####
             self.memory.add_memory(key, shrinkage, value, self.all_labels, 
                                     selection=selection if self.enable_long_term else None)
             self.last_mem_ti = self.curr_ti
-
+            #####------#####
+            addmem_value_time = time.time()
+            #####------#####
             if is_deep_update:
                 self.memory.set_hidden(hidden)
                 self.last_deep_update_ti = self.curr_ti
+            #####------#####
+            sethidden_value_time = time.time()
+            #####------#####
         
+        #####------#####
+        mem_time = time.time()
+        #####------#####
+        #print(f'STEP -> Time spent : Bool Time {bool_time - start_time}, Encode time { encode_time - bool_time}, Segment time {segment_time - encode_time}, Mask Time {mask_time - segment_time}, Mem Time {mem_time - mask_time} \n')
+        #if is_mem_frame: print(f'MEMFRAME -> Time spent : Encode Time {encode_value_time - mask_time}, Add MEM time { addmem_value_time - encode_value_time}, Segment time {sethidden_value_time - addmem_value_time} \n')
+
         if pred_logits_with_bg is None:
             return unpad(pred_prob_with_bg, self.pad), None
         else:

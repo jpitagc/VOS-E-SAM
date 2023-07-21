@@ -24,6 +24,7 @@ from skimage import morphology
 import networkx as nx
 from scipy.ndimage import convolve
 from sklearn.cluster import DBSCAN
+import time 
 
 
 class BaseTracker:
@@ -81,6 +82,10 @@ class BaseTracker:
         painted_image: numpy array (H, W, 3)
         """
 
+        #####------#####
+        start_time = time.time()
+        #####------#####
+
         if first_frame_annotation is not None:   # first frame mask
             # initialisation
             mask, labels = self.mapper.convert_mask(first_frame_annotation)
@@ -89,24 +94,43 @@ class BaseTracker:
         else:
             mask = None
             labels = None
+
+        #####------#####
+        firstframeannotation_time = time.time()
+        #####------#####
         # prepare inputs
         frame_tensor = self.im_transform(frame).to(self.device)
         # track one frame
-        probs, logits = self.tracker.step(frame_tensor, mask, labels)   # logits 2 (bg fg) H W
-        # # refine
-        # Logits is a torch tensor. torch.Size([Num Objects, H, W]
-        #if first_frame_annotation is None and self.sam_model:
-        #    print('Sam Refineent entry', logits.size())
-        #    out_mask = self.custom_sam_refinement(frame, logits, 1)    
-        
+        #####------#####
+        movetodevice_time = time.time()
+        #####------#####
 
-        out_mask = torch.argmax(probs, dim=0)
-        out_mask = (out_mask.detach().cpu().numpy()).astype(np.uint8)
+        probs, logits = self.tracker.step(frame_tensor, mask, labels)   # logits 2 (bg fg) H W
+
+        #####------#####
+        step_time = time.time()
+        #####------#####
+          
+
+        out_mask_tensor = torch.argmax(probs, dim=0)
+        #####------#####
+        argmax_time = time.time()
+        #####------#####
+       
+        out_mask = (out_mask_tensor.cpu().numpy()).astype(np.uint8)
+        #torch.cuda.synchronize()
         
+        #####------#####
+        backtocpu_time = time.time()
+        #####------#####
 
         if first_frame_annotation is None and self.sam_model:
             #print('Sam Refinment. Mode: ' + self.sam_refinement_mode)
             out_mask = self.custom_sam_refinement(frame,out_mask, logits)
+        
+        #####------#####
+        refinement_time = time.time()
+        #####------#####
 
         final_mask = np.zeros_like(out_mask)
         
@@ -114,14 +138,24 @@ class BaseTracker:
         for k, v in self.mapper.remappings.items():
             final_mask[out_mask == v] = k
 
+        #####------#####
+        remappingmasks_time = time.time()
+        #####------#####
+
         num_objs = final_mask.max()
         painted_image = frame
         for obj in range(1, num_objs+1):
             if np.max(final_mask==obj) == 0:
-                continue
+              continue
             painted_image = mask_painter(painted_image, (final_mask==obj).astype('uint8'), mask_color=obj+1)
 
-        # print(f'max memory allocated: {torch.cuda.max_memory_allocated()/(2**20)} MB')
+        #####------#####
+        impainting_time = time.time()
+        #####------#####
+
+        #print(f'TRACKING -> Time spent : First Frame Annotation Time {firstframeannotation_time - start_time}, ToDevice time { movetodevice_time - firstframeannotation_time}, Step time {step_time - movetodevice_time}, Agrmax time {argmax_time - step_time}, Back Tu CPU Time {backtocpu_time - argmax_time}, Refinement Time {refinement_time - backtocpu_time}, Remappings Time {remappingmasks_time - refinement_time}, Impaintings Time {impainting_time - remappingmasks_time} \n')
+
+        #print(f'max memory allocated: {torch.cuda.max_memory_allocated()/(2**20)} MB')
 
         return final_mask, logits, painted_image
 
@@ -129,7 +163,7 @@ class BaseTracker:
         (xsize,ysize) = mask.shape
         ratio = (xsize/ysize) * 256
         mask = mask.unsqueeze(0)
-        self.resizer = Resize([int(ratio),256])
+        self.resizer = Resize([int(ratio),256], antialias=None)
         mask = self.resizer(mask)
         mask = mask.cpu().numpy().squeeze()
         pad_with = ((0,256 - mask.shape[0]),(0,256 - mask.shape[1]))
@@ -392,9 +426,11 @@ class BaseTracker:
             points = [point for point in self.contour_to_line(contour) if mask[point[1], point[0]] != 0]
             all_points += points
         endpoints,branchpoints,midpoints,skeleton = self.get_points_skeleton(mask)
-        all_skeleton_points = self.filter_multiple_points([(y, x) for x, y in endpoints + branchpoints + midpoints])
-        self.print_skeleton_poly_points(mask,skeleton,all_skeleton_points+ all_points)
-        return np.concatenate((np.array(all_skeleton_points).astype('int'),np.array(all_points).astype('int')))
+        skeleton_points = [(y, x) for x, y in endpoints + branchpoints + midpoints]
+        if len(skeleton_points) >= 5: skeleton_points = self.filter_multiple_points(skeleton_points)
+        #self.print_skeleton_poly_points(mask,skeleton,all_skeleton_points+ all_points)
+        if len(all_points) > 0: return np.concatenate((np.array(skeleton_points).astype('int'),np.array(all_points).astype('int')))
+        else: np.array(skeleton_points).astype('int')
 
     def print_skeleton_poly_points(self, mask, skeleton, points):
         canvas = np.zeros_like(mask, dtype=np.uint8)
@@ -445,6 +481,9 @@ class BaseTracker:
 
         if all_points:
             for points in all_points:
+                if points is None: 
+                    print('ey')
+                    continue
                 x_points, y_points = zip(*points)  # Separate x and y coordinates
                 ax.scatter(x_points, y_points, color='red', marker='o', s=20)
                 # Show the image with bounding boxes
@@ -587,19 +626,19 @@ class BaseTracker:
             all_masks = [self.mask_resizer(mask.cpu()) for mask in logits[1:]]
             points_of_interest = [self.get_skeleton_and_poly(mask) for mask in all_masks_separated]
             negative_points = self.find_neg_points(bounding_boxes,[self.get_best_points_of_interest_PolyLine(mask) for mask in all_masks_separated])
-            self.print_image_bbox(out_mask,bounding_boxes,points_of_interest)
+            #self.print_image_bbox(out_mask,bounding_boxes,points_of_interest)
             masksout = []
             for bbox,mask,pos_points,neg_points in zip(bounding_boxes,all_masks,points_of_interest,negative_points):
-                plt.imshow(mask)
-                plt.show()
+                #plt.imshow(mask)
+                #plt.show()
                 bbox = [bbox[0] - 10,bbox[1] - 10,bbox[2] + 10,bbox[3] + 10 ]
                 mode = 'mask_bbox_neg'
                 prompts = {
                     'bounding_box': np.array(bbox)[None,:],
                     'mask_input': mask[None,:,:],
                 }
-                if pos_points.size > 0:
-                    if neg_points.size > 0: 
+                if np.any(pos_points) and pos_points.size > 0:
+                    if np.any(neg_points) and neg_points.size > 0: 
                         prompts['point_coords'] = np.concatenate((pos_points,neg_points))
                         prompts['point_labels'] = np.concatenate((np.ones((pos_points.shape[0])).astype('uint8'),np.zeros((neg_points.shape[0])).astype('uint8') ))
                     else:
@@ -607,9 +646,9 @@ class BaseTracker:
                         prompts['point_labels'] = np.ones((pos_points.shape[0])).astype('uint8')
 
                 masksout_ind, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
-                plt.imshow(np.squeeze(logits))
-                plt.show()
-                self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),[bbox],[pos_points], [neg_points] if neg_points.size > 0 else None)
+                #plt.imshow(np.squeeze(logits))
+                #plt.show()
+                #self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),[bbox],[pos_points], [neg_points] if neg_points.size > 0 else None)
                 masksout.append(masksout_ind)
 
         elif self.sam_refinement_mode == 'mask_bbox_neg':
@@ -646,6 +685,85 @@ class BaseTracker:
         self.sam_model.sam_controler.reset_image()
         return final_mask
 
+
+
+    def compute_bounding_box_batch(self, segmentation_mask_batch):
+        # Get the indices where the segmentation mask is non-zero
+        nonzero_indices = torch.nonzero(segmentation_mask_batch)
+
+        # Calculate the min and max coordinates for y (height) and x (width) separately
+        min_y, _ = torch.min(nonzero_indices[:, 2], dim=0)
+        min_x, _ = torch.min(nonzero_indices[:, 3], dim=0)
+        max_y, _ = torch.max(nonzero_indices[:, 2], dim=0)
+        max_x, _ = torch.max(nonzero_indices[:, 3], dim=0)
+
+        # Stack all four tensors together into one tensor of shape (4, batch_size)
+        bounding_boxes = torch.stack([min_x, min_y, max_x, max_y])
+
+        # Transpose to get the final result of shape (batch_size, 4)
+        bounding_boxes = bounding_boxes.t()
+
+        return bounding_boxes
+    def mask_resizer_torch(self, masks):
+        # Assumes all masks in the batch have the same dimensions
+
+        # Calculate ratio assuming all masks have the same size
+        ratio = masks.shape[2] / masks.shape[3] * 256
+        self.resizer = Resize([int(ratio), 256])
+
+        # Resize the whole batch at once
+        masks = self.resizer(masks)
+
+        # Padding if necessary for the whole batch
+        padding = (0, 256 - masks.shape[2], 0, 256 - masks.shape[3])
+        masks = torch.nn.functional.pad(masks, padding, mode='constant', value=torch.min(masks))
+
+        return masks
+    @torch.no_grad()
+    def custom_sam_refinement_torch(self, frame, out_mask, logits = None):
+        
+        self.sam_model.sam_controler.set_image(frame)
+
+        if self.sam_refinement_mode == 'mask_bbox_pos_neg':
+            bounding_boxes = self.compute_bounding_box_batch(out_mask)
+            all_masks = self.mask_resizer_torch(logits[1:]) 
+            points_of_interest = [self.get_skeleton_and_poly(mask) for mask in all_masks_separated]
+            negative_points = self.find_neg_points(bounding_boxes,[self.get_best_points_of_interest_PolyLine(mask) for mask in all_masks_separated])
+            #self.print_image_bbox(out_mask,bounding_boxes,points_of_interest)
+            masksout = []
+            for bbox,mask,pos_points,neg_points in zip(bounding_boxes,all_masks,points_of_interest,negative_points):
+                #plt.imshow(mask)
+                #plt.show()
+                bbox = [bbox[0] - 10,bbox[1] - 10,bbox[2] + 10,bbox[3] + 10 ]
+                mode = 'mask_bbox_neg'
+                prompts = {
+                    'bounding_box': np.array(bbox)[None,:],
+                    'mask_input': mask[None,:,:],
+                }
+                if pos_points.size > 0:
+                    if neg_points.size > 0: 
+                        prompts['point_coords'] = np.concatenate((pos_points,neg_points))
+                        prompts['point_labels'] = np.concatenate((np.ones((pos_points.shape[0])).astype('uint8'),np.zeros((neg_points.shape[0])).astype('uint8') ))
+                    else:
+                        prompts['point_coords'] = pos_points
+                        prompts['point_labels'] = np.ones((pos_points.shape[0])).astype('uint8')
+
+                masksout_ind, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
+                #plt.imshow(np.squeeze(logits))
+                #plt.show()
+                #self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),[bbox],[pos_points], [neg_points] if neg_points.size > 0 else None)
+                masksout.append(masksout_ind)
+
+        else: print('No torch refinement')
+            
+
+        final_mask = np.zeros_like(out_mask)
+        for v, mask in zip(all_mask_position,masksout):
+            final_mask +=  mask.squeeze(0).astype('uint8') * v
+
+        self.sam_model.sam_controler.reset_image()
+        return final_mask
+    
     # @torch.no_grad()
     # def custom_sam_refinement(self, frame, logits, ti):
     #     """

@@ -7,6 +7,8 @@ from inpainter.base_inpainter import BaseInpainter
 import numpy as np
 import argparse
 import torch
+from torchvision import transforms
+from tracker.util.range_transform import im_normalization
 
 
 class TrackingAnything():
@@ -16,9 +18,15 @@ class TrackingAnything():
         self.xmem_checkpoint = xmem_checkpoint
         self.e2fgvi_checkpoint = e2fgvi_checkpoint
         current_device = 'cuda:0' # Is CPU only available fixed inside each controler 
+        self.device = current_device
         self.samcontroler = SamControler(self.sam_checkpoint, 'vit_h', current_device)
         self.xmem = BaseTracker(self.xmem_checkpoint, device=current_device, sam_model=self.samcontroler if self.args['use_refinement'] else None, sam_mode=self.args['refinement_mode'] if self.args['use_refinement'] else None)
+        self.im_transform = transforms.Compose([
+            transforms.ToTensor(),
+            im_normalization,
+        ])
         #self.baseinpainter = BaseInpainter(self.e2fgvi_checkpoint,current_device) 
+
     # def inference_step(self, first_flag: bool, interact_flag: bool, image: np.ndarray, 
     #                    same_image_flag: bool, points:np.ndarray, labels: np.ndarray, logits: np.ndarray=None, multimask=True):
     #     if first_flag:
@@ -48,7 +56,9 @@ class TrackingAnything():
         masks = []
         logits = []
         painted_images = []
-        for i in tqdm(range(len(images)), desc="Tracking image"):
+        #tranformed_images = [self.im_transform(image) for image in images]
+        #tensor_images = torch.stack(tranformed_images, dim=0).to(self.device)
+        for i in tqdm(range(len(images)), desc="Tracking image"): #, disable=True
             if i ==0:           
                 mask, logit, painted_image = self.xmem.track(images[i], template_mask)
                 masks.append(mask)
@@ -60,6 +70,7 @@ class TrackingAnything():
                 masks.append(mask)
                 logits.append(logit)
                 painted_images.append(painted_image)
+        #del tensor_images
         return masks, logits, painted_images
     
         
