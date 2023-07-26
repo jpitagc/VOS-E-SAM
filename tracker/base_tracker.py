@@ -161,18 +161,21 @@ class BaseTracker:
 
     def mask_resizer(self,mask):
         (xsize,ysize) = mask.shape
-        ratio = (xsize/ysize) * 256
-        mask = mask.unsqueeze(0)
-        self.resizer = Resize([int(ratio),256], antialias=None)
+        if xsize < ysize:
+            ratio = (xsize/ysize) * 256
+            mask = mask.unsqueeze(0)
+            self.resizer = Resize([int(ratio),256], antialias=None)
+        else:
+            ratio = (ysize/xsize) * 256
+            mask = mask.unsqueeze(0)
+            self.resizer = Resize([256,int(ratio)], antialias=None)
+
         mask = self.resizer(mask)
         mask = mask.cpu().numpy().squeeze()
         pad_with = ((0,256 - mask.shape[0]),(0,256 - mask.shape[1]))
         new_mask = np.pad(mask,pad_with, mode = 'constant', constant_values = np.min(mask))
         return new_mask
-
-
-            
-    
+        
     def compute_bounding_box(self,segmentation_mask):
         # Get the indices where the segmentation mask is non-zero
         nonzero_indices = np.nonzero(segmentation_mask)
@@ -635,8 +638,8 @@ class BaseTracker:
             #self.print_image_bbox(out_mask,bounding_boxes,None)
             masksout = []
             for bbox,mask in zip(bounding_boxes,all_masks):
-                #plt.imshow(mask)
-                #plt.show()
+                plt.imshow(mask)
+                plt.show()
                 bbox = [bbox[0] - 10,bbox[1] - 10,bbox[2] + 10,bbox[3] + 10 ]
                 mode = 'mask_bbox'
                 prompts = {
