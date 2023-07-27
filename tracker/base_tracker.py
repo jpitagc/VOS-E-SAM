@@ -434,7 +434,7 @@ class BaseTracker:
         endpoints,branchpoints,midpoints,skeleton = self.get_points_skeleton(mask)
         skeleton_points = [(y, x) for x, y in endpoints + branchpoints + midpoints]
         if len(skeleton_points) >= 5: skeleton_points = self.filter_multiple_points(skeleton_points)
-        self.print_skeleton_poly_points(mask,skeleton,skeleton_points)
+        #self.print_skeleton_poly_points(mask,skeleton,skeleton_points)
         if len(all_points) > 0: return np.concatenate((np.array(skeleton_points).astype('int'),np.array(all_points).astype('int')))
         else: np.array(skeleton_points).astype('int')
 
@@ -660,6 +660,7 @@ class BaseTracker:
             #plt.imshow(frame)
             #plt.show()
             masksout = []
+            
             for bbox,mask,pos_points in zip(bounding_boxes,all_masks,points_of_interest):
                 #plt.imshow(mask)
                 #plt.show()
@@ -669,7 +670,7 @@ class BaseTracker:
                     'bounding_box': np.array(bbox)[None,:],
                     'mask_input': mask[None,:,:],
                 }
-                if pos_points.size > 0: 
+                if pos_points is not None and pos_points.size > 0: 
                         prompts['point_coords']  = pos_points
                         prompts['point_labels'] = np.ones((pos_points.shape[0])).astype('uint8')
 
@@ -708,7 +709,7 @@ class BaseTracker:
         elif self.sam_refinement_mode == 'mask_bbox_pos_neg':
             bounding_boxes = [self.compute_bounding_box(mask) for mask in all_masks_separated]
             all_masks = [self.mask_resizer(mask.cpu()) for mask in logits[1:]]
-            #points_of_interest = [self.get_skeleton_and_poly(mask) for mask in all_masks_separated]
+            points_of_interest = [self.get_skeleton_and_poly(mask) for mask in all_masks_separated]
             negative_points = self.find_neg_points(bounding_boxes,[self.get_best_points_of_interest_PolyLine(mask) for mask in all_masks_separated])
             #self.print_image_bbox(out_mask,bounding_boxes,points_of_interest)
             masksout = []
@@ -716,7 +717,7 @@ class BaseTracker:
                 #plt.imshow(mask)
                 #plt.show()
                 bbox = self.amplify_bbox(bbox,frame.shape[0],frame.shape[1])
-                mode = 'mask_bbox_neg'
+                mode = 'mask_bbox_points'
                 prompts = {
                     'bounding_box': np.array(bbox)[None,:],
                     'mask_input': mask[None,:,:],

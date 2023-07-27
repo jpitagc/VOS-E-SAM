@@ -19,7 +19,8 @@ class DAVIS_MO_Test(data.Dataset):
         self.image_dir = os.path.join(root, 'JPEGImages', resolution)
         _imset_dir = os.path.join(root, 'ImageSets')
         _imset_f = os.path.join(_imset_dir, imset)
-
+        self.resolution = resolution
+        self.year = imset.split('/')[0]
         self.videos = []
         self.num_frames = {}
         self.num_objects = {}
@@ -85,7 +86,7 @@ class DAVIS_MO_Test(data.Dataset):
             N_masks = (N_masks > 0.5).astype(np.uint8) * (N_masks < 255).astype(np.uint8)
             Ms = torch.from_numpy(self.All_to_onehot(N_masks).copy()).float()
             num_objects = torch.LongTensor([int(1)])
-            return Fs, Ms, num_objects, info
+            return Fs, Ms
         else:
             Ms = torch.from_numpy(self.All_to_onehot(N_masks).copy()).float()
             num_objects = torch.LongTensor([int(self.num_objects[video])])
