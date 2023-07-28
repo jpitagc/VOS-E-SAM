@@ -28,7 +28,7 @@ import time
 
 
 class BaseTracker:
-    def __init__(self, xmem_checkpoint, device, sam_model=None, sam_mode = None, model_type=None) -> None:
+    def __init__(self, xmem_checkpoint, device, sam_model=None, sam_mode = None, model_type=None, save_inner_masks_folder = None) -> None:
         """
         device: model device
         xmem_checkpoint: checkpoint of XMem model
@@ -57,6 +57,18 @@ class BaseTracker:
         self.sam_model = sam_model
         self.resizer = Resize([256, 256])
         self.sam_refinement_mode = sam_mode
+
+        if save_inner_masks_folder is not None: 
+            if not os.path.exists(save_inner_masks_folder):
+                os.makedirs(save_inner_masks_folder)
+            inner_path = os.path.join(save_inner_masks_folder,'inner')
+            os.makedirs(inner_path)
+
+            self.xmem_folder_masks = os.path.join(inner_path,'xmem_masks')
+            os.makedirs(self.xmem_folder_masks)
+            self.refinement_folder_masks = os.path.join(inner_path,'refinement_masks')
+            os.makedirs(self.refinement_folder_masks)
+        
 
         if sam_model: print('Sam Refinement ACTIVATED. Mode: '+ self.sam_refinement_mode)
         else: print('Sam Refinement NOT ACTIVATED')
