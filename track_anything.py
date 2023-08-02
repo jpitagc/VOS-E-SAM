@@ -12,7 +12,7 @@ from tracker.util.range_transform import im_normalization
 
 
 class TrackingAnything():
-    def __init__(self, sam_checkpoint, xmem_checkpoint, e2fgvi_checkpoint, args):
+    def __init__(self, sam_checkpoint, xmem_checkpoint, e2fgvi_checkpoint, args, save_inner_masks_folder):
         self.args = args
         self.sam_checkpoint = sam_checkpoint
         self.xmem_checkpoint = xmem_checkpoint
@@ -20,7 +20,10 @@ class TrackingAnything():
         current_device = 'cuda:0' # Is CPU only available fixed inside each controler 
         self.device = current_device
         self.samcontroler = SamControler(self.sam_checkpoint, 'vit_h', current_device)
-        self.xmem = BaseTracker(self.xmem_checkpoint, device=current_device, sam_model=self.samcontroler if self.args['use_refinement'] else None, sam_mode=self.args['refinement_mode'] if self.args['use_refinement'] else None)
+        self.xmem = BaseTracker(self.xmem_checkpoint, device=current_device,\
+            sam_model=self.samcontroler if self.args['use_refinement'] else None,\
+            sam_mode=self.args['refinement_mode'] if self.args['use_refinement'] else None,\
+            save_inner_masks_folder = save_inner_masks_folder)
         self.im_transform = transforms.Compose([
             transforms.ToTensor(),
             im_normalization,
