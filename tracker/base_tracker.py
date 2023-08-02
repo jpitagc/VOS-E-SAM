@@ -60,6 +60,7 @@ class BaseTracker:
 
         self.xmem_folder_masks = None
         self.refinement_folder_masks = None
+        self.current_video = None
         save_inner_masks_folder = os.path.join('./result',save_inner_masks_folder)
         if save_inner_masks_folder is not None: 
             if not os.path.exists(save_inner_masks_folder):
@@ -523,8 +524,11 @@ class BaseTracker:
                     ax.scatter(x_points, y_points, color='blue', marker='o', s=20)
                     # Show the image with bounding boxes
         
-        if save_info is not None: 
-            fig.savefig(f'{save_info[0]}/{save_info[1]}.png', bbox_inches='tight', pad_inches=0) 
+        if save_info is not None:
+            folder = os.path.join(save_info[0],self.current_video)
+            if not os.path.exists(folder):
+                os.makedirs(folder)
+            fig.savefig(f'{folder}/{save_info[1]}.png', bbox_inches='tight', pad_inches=0) 
         else: plt.show()
 
         plt.close()
@@ -546,7 +550,11 @@ class BaseTracker:
        
 
         
-        fig.savefig(f'{save_info[0]}/{save_info[1]}.png', bbox_inches='tight', pad_inches=0) 
+        folder = os.path.join(save_info[0],self.current_video)
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+        fig.savefig(f'{folder}/{save_info[1]}.png', bbox_inches='tight', pad_inches=0)
+
         plt.close()
 
                 
