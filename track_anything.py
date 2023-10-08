@@ -59,22 +59,24 @@ class TrackingAnything():
         masks = []
         logits = []
         painted_images = []
+        scores = []
         #tranformed_images = [self.im_transform(image) for image in images]
         #tensor_images = torch.stack(tranformed_images, dim=0).to(self.device)
         for i in tqdm(range(len(images)), desc="Tracking image"): #, disable=True
             if i ==0:           
-                mask, logit, painted_image = self.xmem.track(images[i], template_mask)
+                mask, logit, painted_image, score = self.xmem.track(images[i], template_mask)
                 masks.append(mask)
                 logits.append(logit)
                 painted_images.append(painted_image)
                 
             else:
-                mask, logit, painted_image = self.xmem.track(images[i])
+                mask, logit, painted_image, score = self.xmem.track(images[i])
                 masks.append(mask)
                 logits.append(logit)
                 painted_images.append(painted_image)
+                scores.append(score)
         #del tensor_images
-        return masks, logits, painted_images
+        return masks, logits, painted_images, scores
     
         
 def parse_augment():

@@ -124,6 +124,9 @@ class BaseTracker:
         #####------#####
 
         probs, logits = self.tracker.step(frame_tensor, mask, labels)   # logits 2 (bg fg) H W
+        
+        
+       
 
         del frame_tensor
         #####------#####
@@ -132,13 +135,23 @@ class BaseTracker:
           
 
         out_mask_tensor = torch.argmax(probs, dim=0)
-
-        del probs
+        
+        
         #####------#####
         argmax_time = time.time()
         #####------#####
        
         out_mask = (out_mask_tensor.cpu().numpy()).astype(np.uint8)
+        
+        # Compute scores for each detected object
+        all_scores = torch.max(probs.reshape(probs.size(0),-1),dim=1).values.tolist()
+        objects = np.unique(out_mask)[1:]
+        scores = [all_scores[i] for i in  objects]
+
+        del probs
+
+        
+
         #torch.cuda.synchronize()
         
         del out_mask_tensor
@@ -148,7 +161,8 @@ class BaseTracker:
 
         if first_frame_annotation is None and self.sam_model:
             #print('Sam Refinment. Mode: ' + self.sam_refinement_mode)
-            out_mask = self.custom_sam_refinement(frame,out_mask, logits, self.tracker.curr_ti)
+            if np.unique(out_mask)[1:].shape[0] != 0: out_mask, scores = self.custom_sam_refinement(frame,out_mask, logits, self.tracker.curr_ti, scores)
+        
         
         #####------#####
         refinement_time = time.time()
@@ -178,8 +192,8 @@ class BaseTracker:
         #print(f'TRACKING -> Time spent : First Frame Annotation Time {firstframeannotation_time - start_time}, ToDevice time { movetodevice_time - firstframeannotation_time}, Step time {step_time - movetodevice_time}, Agrmax time {argmax_time - step_time}, Back Tu CPU Time {backtocpu_time - argmax_time}, Refinement Time {refinement_time - backtocpu_time}, Remappings Time {remappingmasks_time - refinement_time}, Impaintings Time {impainting_time - remappingmasks_time} \n')
 
         #print(f'max memory allocated: {torch.cuda.max_memory_allocated()/(2**20)} MB')
-
-        return final_mask, logits, painted_image
+        
+        return final_mask, logits, painted_image, scores
 
     def mask_resizer(self,mask):
         (xsize,ysize) = mask.shape
@@ -237,6 +251,11 @@ class BaseTracker:
     #     #plt.imshow(new_mask)
     #     #plt.show()
     #     return np.array(coords_list)
+
+    def get_contour(self,segmentation_mask):
+        points = []
+        contours, _ = cv2.findContours(segmentation_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        return np.concatenate(contours).astype('int') 
 
     def get_best_point_of_interest(self,segmentation_mask): 
         '''
@@ -469,6 +488,7 @@ class BaseTracker:
         # Display the superposed masks
         fig, ax = plt.subplots(figsize=(15, 7))
         ax.imshow(canvas)
+        ax.set_axis_off()
         if points is not None:
             x_points, y_points = zip(*points)  # Separate x and y coordinates
             ax.scatter(x_points, y_points, color='blue', marker='o', s=20)
@@ -512,7 +532,6 @@ class BaseTracker:
         if pos_points:
             for points in pos_points:
                 if points is None or len(points)==0: 
-                    print('ey')
                     continue
                 x_points, y_points = zip(*points)  # Separate x and y coordinates
                 ax.scatter(x_points, y_points, color='red', marker='o', s=20)
@@ -532,6 +551,46 @@ class BaseTracker:
         else: plt.show()
 
         plt.close()
+
+    def print_by_objects(self,masks,bounding_boxes,pos_points, neg_points = None, save_info = None):
+        
+
+        # Define bounding boxes
+        # Draw the bounding boxes on the image
+        if bounding_boxes is None: bounding_boxes = [None] * len(masks)
+        if pos_points is None: pos_points = [None] * len(masks)
+        if neg_points is None: neg_points = [None] * len(masks)
+
+        for i, (mask, bbox, pos, neg) in enumerate(zip(masks,bounding_boxes,pos_points,neg_points)):
+            # Create a figure and axes
+            fig, ax = plt.subplots()
+
+            # Display the image
+            ax.imshow(mask)
+            ax.set_axis_off()
+
+            if bbox:
+                x, y, maxx, maxy = bbox
+                rect = patches.Rectangle((x, y), maxx-x, maxy-y, linewidth=2, edgecolor='r', facecolor='none')
+                ax.add_patch(rect)
+
+            if pos is not None and pos.size>0:
+                x_points, y_points = zip(*pos)  # Separate x and y coordinates
+                ax.scatter(x_points, y_points, color='red', marker='o', s=20)
+
+            if neg is not None and neg.size > 0:
+                    x_points, y_points = zip(*neg)  # Separate x and y coordinates
+                    ax.scatter(x_points, y_points, color='blue', marker='o', s=20)
+                    # Show the image with bounding boxes 
+        
+            if save_info is not None:
+                folder = os.path.join(save_info[0],self.current_video)
+                if not os.path.exists(folder):
+                    os.makedirs(folder)
+                fig.savefig(f'{folder}/{save_info[1]}_{i}.png', bbox_inches='tight', pad_inches=0) 
+            else: plt.show()
+
+            plt.close()
     
     def save_masks(self,mask_in, mask_out, save_info):
         # Create a figure with two subplots (1 row, 2 columns)
@@ -568,7 +627,8 @@ class BaseTracker:
         neg_points = []
         for i,bbox in enumerate(bboxes):
             neg_alt = []
-            for j,points in enumerate(all_points[:i] + all_points[i+1:]): 
+            for points in (all_points[:i] + all_points[i+1:]):
+                if points is None: continue 
                 for point in points:
                     if self.point_inside(bbox,point):
                         neg_alt.append(point)
@@ -583,13 +643,26 @@ class BaseTracker:
         bbox = [new_low_x,new_low_y,new_max_x,new_max_y]
         return bbox
 
-    
+    def amplify_bboxes(self,bboxes,width,height):
+        all_bboxes = []
+        for bbox in bboxes:
+            new_low_x = (bbox[0] - 10) if bbox[0] >= 10 else 0
+            new_low_y = (bbox[1] - 10) if bbox[1] >= 10 else 0
+            new_max_x = (bbox[2] + 10) if (bbox[2] + 10) < height else height
+            new_max_y = (bbox[3] + 10) if (bbox[3] + 10) < width else width
+            new_bbox = [new_low_x,new_low_y,new_max_x,new_max_y]
+            all_bboxes.append(new_bbox)
+        return all_bboxes
+
+    def get_points_datatset_tests(self, segmentation_mask):
+        return self.get_best_points_of_interest_PolyLine(segmentation_mask)
 
     @torch.no_grad()
-    def custom_sam_refinement(self, frame, out_mask, logits = None, curr_frame = None):
+    def custom_sam_refinement(self, frame, out_mask, logits, curr_frame, xmemScores ):
         
         all_masks_separated = []
         all_mask_position = []
+        #print('Xmem Mask: ',list(np.unique(out_mask))[1:])
         for i, v in enumerate(list(np.unique(out_mask))):
             if v == 0: continue
             current_mask = np.zeros_like(out_mask)
@@ -600,64 +673,86 @@ class BaseTracker:
         self.sam_model.sam_controler.set_image(frame)
 
         if self.sam_refinement_mode == 'bbox':
+            #plt.imshow(out_mask)
+            #plt.show()
+
             bounding_boxes = [self.compute_bounding_box(mask) for mask in all_masks_separated]
-            self.print_image_bbox(out_mask,None,None,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}')) 
-            self.print_image_bbox(out_mask,bounding_boxes,None,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}_inputs'))            
+            #bounding_boxes = self.amplify_bboxes(bounding_boxes, frame.shape[0], frame.shape[1])
+            #self.print_image_bbox(out_mask,None,None,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}')) 
+            #self.print_image_bbox(out_mask,bounding_boxes,None,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}_inputs'))
+            #self.print_by_objects(all_masks_separated,bounding_boxes,None,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}_inputs'))
+            #print(bounding_boxes)
             bounding_boxes_tensor = torch.tensor(bounding_boxes, device= self.sam_model.sam_controler.predictor.device)
             transformed_boxes = self.sam_model.sam_controler.predictor.transform.apply_boxes_torch(bounding_boxes_tensor, frame.shape[:2])
             mode = 'bounding_boxes'
             prompts = {'bounding_boxes': transformed_boxes}
+            #print(prompts)
             masksout, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
+            #print('Mask out: ', len(masksout))
             masksout = masksout.detach().cpu().numpy()
-            for i,(mask, bbox) in enumerate(zip(masksout,bounding_boxes)):
-                self.print_image_bbox(mask.squeeze(0).astype('uint8'),None,None,None,save_info = (self.refinement_folder_masks,f'refine_{curr_frame}_{i}'))
+            #for i,(mask, bbox) in enumerate(zip(masksout,bounding_boxes)):
+                #self.print_image_bbox(mask.squeeze(0).astype('uint8'),None,None,None,save_info = (self.refinement_folder_masks,f'refine_{curr_frame}_{i}'))
+            scores = scores.view(scores.shape[0]).cpu().numpy().tolist()
 
 
         elif self.sam_refinement_mode == 'point':
-            points_of_interest = [self.get_best_point_of_interest(mask) for mask in all_masks_separated]
-            points_of_interest_skeleton = [self.get_skeleton_and_poly(mask) for mask in all_masks_separated]
-            self.print_image_bbox(out_mask,None,None,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}'))
-            self.print_image_bbox(out_mask,None,points_of_interest,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}_inputs'))            
-            masksout = []
+            points_of_interest_skeleton = [self.get_points_datatset_tests(mask) for mask in all_masks_separated]
+            #self.print_image_bbox(out_mask,None,None,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}'))
+            #self.print_image_bbox(out_mask,None,points_of_interest_skeleton,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}_inputs'))            
+            #self.print_by_objects(all_masks_separated,None,points_of_interest_skeleton,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}_inputs'))
+            masksout,scores = [],[]
             for i, points in enumerate(points_of_interest_skeleton):
-                mode = 'point'
-                prompts = {
-                    'point_coords': points,
-                    'point_labels': np.ones((points.shape[0])).astype('uint8'), 
-                }
-                masksout_ind, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
-                self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),None,None,None,save_info = (self.refinement_folder_masks,f'refine_{curr_frame}_{i}'))
+                if points is not None and points.size > 0:
+                    mode = 'point'
+                    prompts = {
+                        'point_coords': points,
+                        'point_labels': np.ones((points.shape[0])).astype('uint8'), 
+                    }
+                    masksout_ind, score, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
+                    #self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),None,None,None,save_info = (self.refinement_folder_masks,f'refine_{curr_frame}_{i}'))
+                else: 
+                    #masksout_ind = np.zeros_like(out_mask[None,:])
+                    masksout_ind = all_masks_separated[i][None,:]
+                    score = np.array(xmemScores[i])
                 masksout.append(masksout_ind)
+                scores.append(score.item())
+
 
         elif self.sam_refinement_mode == 'both':
             bounding_boxes = [self.compute_bounding_box(mask) for mask in all_masks_separated]
-            points_of_interest = [self.get_best_point_of_interest(mask) for mask in all_masks_separated]
-            self.print_image_bbox(out_mask,None,None,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}'))
-            self.print_image_bbox(out_mask,bounding_boxes,points_of_interest,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}_inputs')) 
-            masksout = []
+            points_of_interest = [self.get_points_datatset_tests(mask) for mask in all_masks_separated]
+            #self.print_image_bbox(out_mask,None,None,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}'))
+            #self.print_image_bbox(out_mask,bounding_boxes,points_of_interest,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}_inputs')) 
+            masksout,scores = [],[]
             for i,(bbox,points) in enumerate(zip(bounding_boxes,points_of_interest)):
-                if points.size > 0:
+                if points is not None and points.size > 0:
                     mode = 'both'
                     prompts = {
                         'bounding_box': np.array(bbox)[None,:],
                         'point_coords': points,
                         'point_labels': np.ones((points.shape[0])).astype('uint8'), 
                     }
-                    masksout_ind, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
-                    self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),None,None,None,save_info = (self.refinement_folder_masks,f'refine_{curr_frame}_{i}'))
-                else: masksout_ind = np.zeros_like(out_mask[None,:])
+                    masksout_ind, score, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
+                    #self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),None,None,None,save_info = (self.refinement_folder_masks,f'refine_{curr_frame}_{i}'))
+                else: 
+                    #masksout_ind = np.zeros_like(out_mask[None,:])
+                    masksout_ind = all_masks_separated[i][None,:]
+                    score = np.array(xmemScores[i])
                 masksout.append(masksout_ind)
+                scores.append(score.item())
                 
         elif self.sam_refinement_mode == 'both_neg':
             bounding_boxes = [self.compute_bounding_box(mask) for mask in all_masks_separated]
-            points_of_interest = [self.get_best_point_of_interest(mask) for mask in all_masks_separated]
+            #bounding_boxes = self.amplify_bboxes(bounding_boxes, frame.shape[0], frame.shape[1])
+            points_of_interest = [self.get_points_datatset_tests(mask) for mask in all_masks_separated]
             #points_of_interest = self.get_points_BOR_image(frame,all_masks_separated) 
             negative_points = self.find_neg_points(bounding_boxes,points_of_interest)
-            self.print_image_bbox(out_mask,None,None,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}'))
-            self.print_image_bbox(out_mask,bounding_boxes,points_of_interest,negative_points, save_info = (self.xmem_folder_masks,f'output_{curr_frame}_inputs')) 
-            masksout = []
+            #self.print_image_bbox(out_mask,None,None,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}'))
+            #self.print_image_bbox(out_mask,bounding_boxes,points_of_interest,negative_points, save_info = (self.xmem_folder_masks,f'output_{curr_frame}_inputs')) 
+            #self.print_by_objects(all_masks_separated,bounding_boxes,points_of_interest,negative_points, save_info = (self.xmem_folder_masks,f'output_{curr_frame}_inputs'))
+            masksout,scores = [],[]
             for i,(bbox,pos_points,neg_points) in enumerate(zip(bounding_boxes,points_of_interest,negative_points)):
-                if pos_points.size > 0:
+                if pos_points is not None and pos_points.size > 0:
                     if neg_points.size > 0: 
                         coords = np.concatenate((pos_points,neg_points))
                         labels = np.concatenate((np.ones((pos_points.shape[0])).astype('uint8'),np.zeros((neg_points.shape[0])).astype('uint8') ))
@@ -671,16 +766,19 @@ class BaseTracker:
                         'point_coords': coords,
                         'point_labels': labels
                     }
-                    masksout_ind, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
-                    self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),None,None,None,save_info = (self.refinement_folder_masks,f'refine_{curr_frame}_{i}'))
+                    masksout_ind, score, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
+                    #self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),None,None,None,save_info = (self.refinement_folder_masks,f'refine_{curr_frame}_{i}'))
                 else: 
-                    masksout_ind = np.zeros_like(out_mask[None,:])
+                    #masksout_ind = np.zeros_like(out_mask[None,:])
+                    masksout_ind = all_masks_separated[i][None,:]
+                    score = np.array(xmemScores[i])
                 masksout.append(masksout_ind)
+                scores.append(score.item())
 
         elif self.sam_refinement_mode == 'mask':
             all_masks = [self.mask_resizer(mask.cpu()) for mask in logits[1:]]
             #self.print_image_bbox(out_mask,None,None)
-            masksout = []
+            masksout,scores = [],[]
             for mask in all_masks:
                 plt.imshow(mask)
                 plt.show()
@@ -688,66 +786,71 @@ class BaseTracker:
                 prompts = {
                     'mask_input': mask[None,:,:],
                 }
-                masksout_ind, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
+                masksout_ind, score, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
                 #plt.imshow(np.squeeze(logits))
                 #plt.show()
                 #self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),None,None, None)
                 masksout.append(masksout_ind)
+                scores.append(score.item())
 
         elif self.sam_refinement_mode == 'mask_bbox':
             bounding_boxes = [self.compute_bounding_box(mask) for mask in all_masks_separated]
             all_masks = [self.mask_resizer(mask.cpu()) for mask in logits[1:]]
             #self.print_image_bbox(out_mask,bounding_boxes,None)
-            self.print_image_bbox(out_mask,None,None,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}'))
-            self.print_image_bbox(out_mask,bounding_boxes,None,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}_inputs')) 
-            masksout = []
+            #self.print_image_bbox(out_mask,None,None,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}'))
+            #self.print_image_bbox(out_mask,bounding_boxes,None,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}_inputs')) 
+            masksout,scores = [],[]
             for i,(bbox,mask) in enumerate(zip(bounding_boxes,all_masks)):
-                bbox = self.amplify_bbox(bbox,frame.shape[0],frame.shape[1])
+                #bbox = self.amplify_bbox(bbox,frame.shape[0],frame.shape[1])
                 mode = 'mask_bbox'
                 prompts = {
                     'bounding_box': np.array(bbox)[None,:],
                     'mask_input': mask[None,:,:],
                 }
-                masksout_ind, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
-                self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),None,None,None,save_info = (self.refinement_folder_masks,f'refine_{curr_frame}_{i}'))
-                self.save_masks(mask, np.squeeze(logits), save_info = (self.refinement_folder_masks,f'masks_{curr_frame}_{i}'))
+                masksout_ind, score, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
+                #self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),None,None,None,save_info = (self.refinement_folder_masks,f'refine_{curr_frame}_{i}'))
+                #self.save_masks(mask, np.squeeze(logits), save_info = (self.refinement_folder_masks,f'masks_{curr_frame}_{i}'))
                 #self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),[bbox],None, None)
                 masksout.append(masksout_ind)
+                scores.append(score.item())
         
         elif self.sam_refinement_mode == 'mask_pos':
             all_masks = [self.mask_resizer(mask.cpu()) for mask in logits[1:]]
-            points_of_interest = [self.get_skeleton_and_poly(mask) for mask in all_masks_separated]
+            points_of_interest = [self.get_points_datatset_tests(mask) for mask in all_masks_separated]
             #self.print_image_bbox(out_mask,bounding_boxes,points_of_interest)
-            self.print_image_bbox(out_mask,None,None,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}'))
-            self.print_image_bbox(out_mask,None,points_of_interest,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}_inputs'))
-            masksout = []
+            #self.print_image_bbox(out_mask,None,None,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}'))
+            #self.print_image_bbox(out_mask,None,points_of_interest,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}_inputs'))
+            masksout,scores = [],[]
             for i,(mask,pos_points) in enumerate(zip(all_masks,points_of_interest)):
-                mode = 'mask_points'
-                prompts = {
-                    'mask_input': mask[None,:,:],
-                }
                 if pos_points is not None and pos_points.size > 0: 
-                        prompts['point_coords']  = pos_points
-                        prompts['point_labels'] = np.ones((pos_points.shape[0])).astype('uint8')
-
-                masksout_ind, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
-                self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),None,None,None,save_info = (self.refinement_folder_masks,f'refine_{curr_frame}_{i}'))
-                self.save_masks(mask, np.squeeze(logits), save_info = (self.refinement_folder_masks,f'masks_{curr_frame}_{i}'))
+                    mode = 'mask_points'
+                    prompts = {
+                        'mask_input': mask[None,:,:],
+                        'point_coords' : pos_points,
+                        'point_labels' : np.ones((pos_points.shape[0])).astype('uint8')
+                    }
+                    masksout_ind, score, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
+                    #self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),None,None,None,save_info = (self.refinement_folder_masks,f'refine_{curr_frame}_{i}'))
+                    #self.save_masks(mask, np.squeeze(logits), save_info = (self.refinement_folder_masks,f'masks_{curr_frame}_{i}'))
                 #self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),[bbox],[pos_points] if pos_points.size > 0 else None, None)
+                else: 
+                    masksout_ind = all_masks_separated[i][None,:]
+                    score = np.array(xmemScores[i])
                 masksout.append(masksout_ind)
+                scores.append(score.item())
 
 
         elif self.sam_refinement_mode == 'mask_bbox_pos':
             bounding_boxes = [self.compute_bounding_box(mask) for mask in all_masks_separated]
             all_masks = [self.mask_resizer(mask.cpu()) for mask in logits[1:]]
-            points_of_interest = [self.get_skeleton_and_poly(mask) for mask in all_masks_separated]
-            self.print_image_bbox(out_mask,None,None,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}'))
-            self.print_image_bbox(out_mask,bounding_boxes,points_of_interest,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}_inputs'))
+            points_of_interest = [self.get_points_datatset_tests(mask) for mask in all_masks_separated]
+            #self.print_image_bbox(out_mask,None,None,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}'))
+            #self.print_image_bbox(out_mask,bounding_boxes,points_of_interest,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}_inputs'))
+            #self.print_by_objects(all_masks_separated,bounding_boxes,points_of_interest,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}_inputs'))
             #self.print_image_bbox(out_mask,bounding_boxes,points_of_interest)
-            masksout = []
+            masksout,scores = [],[]
             
             for i,(bbox,mask,pos_points) in enumerate(zip(bounding_boxes,all_masks,points_of_interest)):
-                bbox = self.amplify_bbox(bbox,frame.shape[0],frame.shape[1])
                 mode = 'mask_bbox_points'
                 prompts = {
                     'bounding_box': np.array(bbox)[None,:],
@@ -757,23 +860,24 @@ class BaseTracker:
                         prompts['point_coords']  = pos_points
                         prompts['point_labels'] = np.ones((pos_points.shape[0])).astype('uint8')
 
-                masksout_ind, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
-                self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),None,None,None,save_info = (self.refinement_folder_masks,f'refine_{curr_frame}_{i}'))
-                self.save_masks(mask, np.squeeze(logits), save_info = (self.refinement_folder_masks,f'masks_{curr_frame}_{i}'))
+                masksout_ind, score, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
+                #self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),None,None,None,save_info = (self.refinement_folder_masks,f'refine_{curr_frame}_{i}'))
+                #self.save_masks(mask, np.squeeze(logits), save_info = (self.refinement_folder_masks,f'masks_{curr_frame}_{i}'))
                 #self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),[bbox],[pos_points] if pos_points.size > 0 else None, None)
                 masksout.append(masksout_ind)
+                scores.append(score.item())
 
         elif self.sam_refinement_mode == 'mask_bbox_neg':
             bounding_boxes = [self.compute_bounding_box(mask) for mask in all_masks_separated]
             all_masks = [self.mask_resizer(mask.cpu()) for mask in logits[1:]]
-            points_of_interest = [self.get_best_points_of_interest_PolyLine(mask) for mask in all_masks_separated]
+            points_of_interest = [self.get_points_datatset_tests(mask) for mask in all_masks_separated]
             negative_points = self.find_neg_points(bounding_boxes,points_of_interest)
-            self.print_image_bbox(out_mask,None,None,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}'))
-            self.print_image_bbox(out_mask,bounding_boxes,None,negative_points, save_info = (self.xmem_folder_masks,f'output_{curr_frame}_inputs'))
+            #self.print_image_bbox(out_mask,None,None,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}'))
+            #self.print_image_bbox(out_mask,bounding_boxes,None,negative_points, save_info = (self.xmem_folder_masks,f'output_{curr_frame}_inputs'))
             #self.print_image_bbox(out_mask,bounding_boxes,None)
-            masksout = []
+            masksout,scores = [],[]
             for i,(bbox,mask,neg_points) in enumerate(zip(bounding_boxes,all_masks,negative_points)):
-                bbox = self.amplify_bbox(bbox,frame.shape[0],frame.shape[1])
+                #bbox = self.amplify_bbox(bbox,frame.shape[0],frame.shape[1])
                 mode = 'mask_bbox_points'
                 prompts = {
                     'bounding_box': np.array(bbox)[None,:],
@@ -783,25 +887,27 @@ class BaseTracker:
                         prompts['point_coords']  = neg_points
                         prompts['point_labels'] = np.zeros((neg_points.shape[0])).astype('uint8')
 
-                masksout_ind, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
-                self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),None,None,None,save_info = (self.refinement_folder_masks,f'refine_{curr_frame}_{i}'))
-                self.save_masks(mask, np.squeeze(logits), save_info = (self.refinement_folder_masks,f'masks_{curr_frame}_{i}'))
+                masksout_ind, score, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
+                #self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),None,None,None,save_info = (self.refinement_folder_masks,f'refine_{curr_frame}_{i}'))
+                #self.save_masks(mask, np.squeeze(logits), save_info = (self.refinement_folder_masks,f'masks_{curr_frame}_{i}'))
                 #self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),[bbox],None, [neg_points] if neg_points.size > 0 else None)
                 masksout.append(masksout_ind)
+                scores.append(score.item())
         
         elif self.sam_refinement_mode == 'mask_bbox_pos_neg':
             bounding_boxes = [self.compute_bounding_box(mask) for mask in all_masks_separated]
             all_masks = [self.mask_resizer(mask.cpu()) for mask in logits[1:]]
-            points_of_interest = [self.get_skeleton_and_poly(mask) for mask in all_masks_separated]
-            negative_points = self.find_neg_points(bounding_boxes,[self.get_best_points_of_interest_PolyLine(mask) for mask in all_masks_separated])
-            self.print_image_bbox(out_mask,None,None,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}'))
-            self.print_image_bbox(out_mask,bounding_boxes,points_of_interest,negative_points, save_info = (self.xmem_folder_masks,f'output_{curr_frame}_inputs'))
+            points_of_interest = [self.get_points_datatset_tests(mask) for mask in all_masks_separated]
+            negative_points = self.find_neg_points(bounding_boxes,points_of_interest)
+            #self.print_image_bbox(out_mask,None,None,None, save_info = (self.xmem_folder_masks,f'output_{curr_frame}'))
+            #self.print_image_bbox(out_mask,bounding_boxes,points_of_interest,negative_points, save_info = (self.xmem_folder_masks,f'output_{curr_frame}_inputs'))
+            #self.print_by_objects(all_masks_separated,bounding_boxes,points_of_interest,negative_points, save_info = (self.xmem_folder_masks,f'output_{curr_frame}_inputs'))
             #self.print_image_bbox(out_mask,bounding_boxes,points_of_interest)
-            masksout = []
+            masksout,scores = [],[]
             for i,(bbox,mask,pos_points,neg_points) in enumerate(zip(bounding_boxes,all_masks,points_of_interest,negative_points)):
                 #plt.imshow(mask)
                 #plt.show()
-                bbox = self.amplify_bbox(bbox,frame.shape[0],frame.shape[1])
+                #bbox = self.amplify_bbox(bbox,frame.shape[0],frame.shape[1])
                 mode = 'mask_bbox_points'
                 prompts = {
                     'bounding_box': np.array(bbox)[None,:],
@@ -815,19 +921,35 @@ class BaseTracker:
                         prompts['point_coords'] = pos_points
                         prompts['point_labels'] = np.ones((pos_points.shape[0])).astype('uint8')
 
-                masksout_ind, scores, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
-                self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),None,None,None,save_info = (self.refinement_folder_masks,f'refine_{curr_frame}_{i}'))
-                self.save_masks(mask, np.squeeze(logits), save_info = (self.refinement_folder_masks,f'masks_{curr_frame}_{i}'))
+                masksout_ind, score, logits = self.sam_model.sam_controler.predict(prompts, mode, multimask=False)
+                #self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),None,None,None,save_info = (self.refinement_folder_masks,f'refine_{curr_frame}_{i}'))
+                #self.save_masks(mask, np.squeeze(logits), save_info = (self.refinement_folder_masks,f'masks_{curr_frame}_{i}'))
                 #self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),[bbox],[pos_points], [neg_points] if neg_points.size > 0 else None)
                 masksout.append(masksout_ind)
+                scores.append(score.item())
             
+        for i in range(0,len(masksout)):
+            if scores[i] < 0.9705: 
+                scores[i] = xmemScores[i]
+                masksout[i] = all_masks_separated[i][None,:].astype(bool)
 
-        final_mask = np.zeros_like(out_mask)
-        for v, mask in zip(all_mask_position,masksout):
-            final_mask +=  mask.squeeze(0).astype('uint8') * v
+        listed = zip(scores,all_mask_position,masksout)
+        sorted_listed = sorted(listed)
+        final_mask_n = np.zeros_like(out_mask)
+        for _,v, mask in sorted_listed:
+            final_mask_n[mask.squeeze(0)] = v
+
+
+        #final_mask_n = np.zeros_like(out_mask)
+        #for v, mask in zip(all_mask_position,masksout):
+        #    final_mask_n[mask.squeeze(0)] = v
+            #final_mask +=  mask.squeeze(0).astype('uint8') * v
+
+        #print('Final mask out ', list(np.unique(final_mask)))
+        #print('Final mask new out ', list(np.unique(final_mask_n)))
 
         self.sam_model.sam_controler.reset_image()
-        return final_mask
+        return final_mask_n, scores
 
 
 

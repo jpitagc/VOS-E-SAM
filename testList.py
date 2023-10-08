@@ -7,6 +7,7 @@
 ## Refinement##
 ## NONE
 ## BBOX 
+## Positive Points (Centroid per Countour CC, CC + Polilyne, CC + Polilyne + Skeleton)
 ## Positive Points and BBOX (Centroid per Countour CC, CC + Polilyne, CC + Polilyne + Skeleton)
 ## Positive and Negative Points and BBOX (Centroid per Countour CC, CC + Polilyne, CC + Polilyne + Skeleton)
 ## Masks BBOX
