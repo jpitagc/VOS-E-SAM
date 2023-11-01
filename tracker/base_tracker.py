@@ -119,6 +119,7 @@ class BaseTracker:
         # prepare inputs
         frame_tensor = self.im_transform(frame).to(self.device)
         # track one frame
+
         #####------#####
         movetodevice_time = time.time()
         #####------#####
