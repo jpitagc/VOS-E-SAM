@@ -1,5 +1,5 @@
 <!-- ![](./assets/track-anything-logo.jpg) -->
-
+<div style = "color: black;">
 <div align=center>
 <img src="./assets/jirafe.png"/>
 </div>
@@ -10,6 +10,7 @@
 </a> -->
 </div>
 
+<div style="background-color: white; padding: 15px;">
 <h1>
 VOSE_SAM
 </h1>
@@ -95,8 +96,11 @@ If you find this work useful for your research or applications, please cite usin
       primaryClass={cs.CV}
 }
 ``` -->
+</div>
 
 ## :clap: Acknowledgements
 
 The project is based on the code of [Track Anything](https://github.com/gaomingqi/Track-Anything) and uses 
 [XMem](https://github.com/hkchengrex/XMem), [Segment Anything](https://github.com/facebookresearch/segment-anything), and [Segment Anything in High Quality](https://github.com/SysCV/sam-hq). Thanks for the authors for their efforts.
+
+</div>
