@@ -10,7 +10,7 @@
 </a> -->
 </div>
 
-<div style="background-color: white; padding: 15px;">
+<div style="padding: 15px;">
 <h1>
 VOSE_SAM
 </h1>
@@ -33,8 +33,8 @@ This model unifies XMEM with SAM and SAM-HQ to enhance the performance of object
 
 ***Davis 2016***
 
-<div align=center>
-<img src="assets/MejorModeloDavisCom2016.png" width="81%"/>
+<div align=center >
+<img src="assets/MejorModeloDavisCom2016.png" width="81%" style = "background-color: white;"/>
 </div>
 
 
@@ -47,7 +47,7 @@ This model unifies XMEM with SAM and SAM-HQ to enhance the performance of object
 ***Davis 2017***
 
 <div align=center>
-<img src="assets/MejorModeloDavisCom2017.png" width="81%"/>
+<img src="assets/MejorModeloDavisCom2017.png" width="81%"  style = "background-color: white;/>
 </div>
 
 <div align=center>
@@ -57,8 +57,8 @@ This model unifies XMEM with SAM and SAM-HQ to enhance the performance of object
 
 ***LongDataset***
 
-<div align=center>
-<img src="assets/LongBest.png" width="81%"/>
+<div align=center >
+<img src="assets/LongBest.png" width="81%" style = "background-color: white;"/>
 </div>
 
 
