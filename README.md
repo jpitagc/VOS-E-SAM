@@ -47,7 +47,7 @@ This model unifies XMEM with SAM and SAM-HQ to enhance the performance of object
 ***Davis 2017***
 
 <div align=center>
-<img src="assets/MejorModeloDavisCom2017.png" width="81%"  style = "background-color: white;/>
+<img src="assets/MejorModeloDavisCom2017.png" width="81%"  style = "background-color: white;"/>
 </div>
 
 <div align=center>
