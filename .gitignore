@@ -9,7 +9,7 @@ debug_images/
 *.npy
 images/
 test_sample/
-result/
+result*/
 vots/
 vots.py
 .venvTA
@@ -21,3 +21,4 @@ HQRequirements.txt
 notebooks/
 common/
 PythonAPI/
+.tmp.driveupload/

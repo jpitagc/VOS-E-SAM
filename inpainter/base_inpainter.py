@@ -18,6 +18,7 @@ class BaseInpainter:
 		E2FGVI_checkpoint: checkpoint of inpainter (version hq, with multi-resolution support)
 		"""
 		net = importlib.import_module('inpainter.model.e2fgvi_hq')
+		device = device if torch.cuda.is_available() else torch.device("cpu")
 		self.model = net.InpaintGenerator().to(device)
 		self.model.load_state_dict(torch.load(E2FGVI_checkpoint, map_location=device))
 		self.model.eval()

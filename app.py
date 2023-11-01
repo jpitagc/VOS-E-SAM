@@ -229,7 +229,12 @@ def show_mask(video_state, interactive_state, mask_dropdown):
     return select_frame, operation_log
 
 # tracking vos
-def vos_tracking_video(video_state, interactive_state, mask_dropdown):
+def vos_tracking_video(video_state, interactive_state, mask_dropdown): 
+    # video state -> dict: ['user_name', 'video_name', 'origin_images', 'painted_images', 'masks', 'logits', 'select_frame_number', 'fps']
+    # interactive_state -> dict:  ['inference_times', 'negative_click_times', 'positive_click_times', 'mask_save', 'multi_mask', 'track_end_number', 'resize_ratio']
+    # mask_dropdwon -> list : Mask names. Example -> ['mask_001', 'mask_002', 'mask_003']
+
+    print("VOS TRACKING VIDEO: ", mask_dropdown,' || ', mask_dropdown[0],' || ', len(mask_dropdown))
     operation_log = [("",""), ("Track the selected masks, and then you can select the masks for inpainting.","Normal")]
     model.xmem.clear_memory()
     if interactive_state["track_end_number"]:

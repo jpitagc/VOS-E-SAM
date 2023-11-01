@@ -20,7 +20,7 @@ class BaseSegmenter:
         print(f"Initializing BaseSegmenter to {device}")
         assert model_type in ['vit_b', 'vit_l', 'vit_h'], 'model_type must be vit_b, vit_l, or vit_h'
 
-        self.device = device
+        self.device = device if torch.cuda.is_available() else torch.device("cpu")
         self.torch_dtype = torch.float16 if 'cuda' in device else torch.float32
         self.model = sam_model_registry[model_type](checkpoint=SAM_checkpoint)
         self.model.to(device=self.device)
@@ -57,7 +57,7 @@ class BaseSegmenter:
         whem mask_outputs=True, mask_input=logits[np.argmax(scores), :, :][None, :, :]
         """
         assert self.embedded, 'prediction is called before set_image (feature embedding).'
-        assert mode in ['point', 'mask', 'both'], 'mode must be point, mask, or both'
+        assert mode in ['point', 'mask', 'both','bbox','bounding_boxes','mask_bbox','mask_points','mask_bbox_points','mask_bbox_pos_neg'], f'mode must be point, mask,bbox, or both was {mode}'
         
         if mode == 'point':
             masks, scores, logits = self.predictor.predict(point_coords=prompts['point_coords'], 
@@ -66,10 +66,38 @@ class BaseSegmenter:
         elif mode == 'mask':
             masks, scores, logits = self.predictor.predict(mask_input=prompts['mask_input'], 
                                 multimask_output=multimask)
+        elif mode == 'bbox':
+            masks, scores, logits = self.predictor.predict(box=prompts['bounding_box'], 
+                                multimask_output=multimask)
+        elif mode == 'bounding_boxes':
+            masks, scores, logits = self.predictor.predict_torch(point_coords=None,
+                                point_labels=None,
+                                boxes=prompts['bounding_boxes'], 
+                                multimask_output=multimask)
         elif mode == 'both':   # both
             masks, scores, logits = self.predictor.predict(point_coords=prompts['point_coords'], 
                                 point_labels=prompts['point_labels'], 
-                                mask_input=prompts['mask_input'], 
+                                box=prompts['bounding_box'], 
+                                multimask_output=multimask)
+        elif mode == 'mask_bbox':
+            masks, scores, logits = self.predictor.predict(mask_input=prompts['mask_input'], 
+                                box=prompts['bounding_box'],
+                                multimask_output=multimask)
+        elif mode == 'mask_bbox_points':
+            if ('point_coords' in prompts):
+                masks, scores, logits = self.predictor.predict(mask_input=prompts['mask_input'], 
+                                    box=prompts['bounding_box'],
+                                    point_coords=prompts['point_coords'], 
+                                    point_labels=prompts['point_labels'], 
+                                    multimask_output=multimask)
+            else: 
+                masks, scores, logits = self.predictor.predict(mask_input=prompts['mask_input'], 
+                                box=prompts['bounding_box'],
+                                multimask_output=multimask)
+        elif mode == 'mask_points':
+            masks, scores, logits = self.predictor.predict(mask_input=prompts['mask_input'], 
+                                point_coords=prompts['point_coords'], 
+                                point_labels=prompts['point_labels'], 
                                 multimask_output=multimask)
         else:
             raise("Not implement now!")

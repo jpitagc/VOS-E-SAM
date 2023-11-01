@@ -6,18 +6,30 @@ from tracker.base_tracker import BaseTracker
 from inpainter.base_inpainter import BaseInpainter
 import numpy as np
 import argparse
-
+import torch
+from torchvision import transforms
+from tracker.util.range_transform import im_normalization
 
 
 class TrackingAnything():
-    def __init__(self, sam_checkpoint, xmem_checkpoint, e2fgvi_checkpoint, args):
+    def __init__(self, sam_checkpoint, xmem_checkpoint, e2fgvi_checkpoint, args, save_inner_masks_folder):
         self.args = args
         self.sam_checkpoint = sam_checkpoint
         self.xmem_checkpoint = xmem_checkpoint
         self.e2fgvi_checkpoint = e2fgvi_checkpoint
-        self.samcontroler = SamControler(self.sam_checkpoint, 'vit_h', 'cuda:0')
-        self.xmem = BaseTracker(self.xmem_checkpoint, device='cuda:0')
-        self.baseinpainter = BaseInpainter(self.e2fgvi_checkpoint, 'cuda:0') 
+        current_device = 'cuda:0' # Is CPU only available fixed inside each controler 
+        self.device = current_device
+        self.samcontroler = SamControler(self.sam_checkpoint, 'vit_h', current_device)
+        self.xmem = BaseTracker(self.xmem_checkpoint, device=current_device,\
+            sam_model=self.samcontroler if self.args['use_refinement'] else None,\
+            sam_mode=self.args['refinement_mode'] if self.args['use_refinement'] else None,\
+            save_inner_masks_folder = save_inner_masks_folder)
+        self.im_transform = transforms.Compose([
+            transforms.ToTensor(),
+            im_normalization,
+        ])
+        #self.baseinpainter = BaseInpainter(self.e2fgvi_checkpoint,current_device) 
+
     # def inference_step(self, first_flag: bool, interact_flag: bool, image: np.ndarray, 
     #                    same_image_flag: bool, points:np.ndarray, labels: np.ndarray, logits: np.ndarray=None, multimask=True):
     #     if first_flag:
@@ -40,23 +52,31 @@ class TrackingAnything():
     #     return mask, logit, painted_image
 
     def generator(self, images: list, template_mask:np.ndarray):
-        
+        # All loaded images as list of np.arrays. Size of original video 
+        # Initial mask as np.array. 0 for background and 1,2,3... for each mask.
+        # Example -> Imagenes 300 (540, 960, 3) || (540, 960) [0 1 2 3]
+        #print('Imagenes',len(images),images[0].shape,'||',template_mask.shape, np.unique(template_mask))
         masks = []
         logits = []
         painted_images = []
-        for i in tqdm(range(len(images)), desc="Tracking image"):
+        scores = []
+        #tranformed_images = [self.im_transform(image) for image in images]
+        #tensor_images = torch.stack(tranformed_images, dim=0).to(self.device)
+        for i in tqdm(range(len(images)), desc="Tracking image"): #, disable=True
             if i ==0:           
-                mask, logit, painted_image = self.xmem.track(images[i], template_mask)
+                mask, logit, painted_image, score = self.xmem.track(images[i], template_mask)
                 masks.append(mask)
                 logits.append(logit)
                 painted_images.append(painted_image)
                 
             else:
-                mask, logit, painted_image = self.xmem.track(images[i])
+                mask, logit, painted_image, score = self.xmem.track(images[i])
                 masks.append(mask)
                 logits.append(logit)
                 painted_images.append(painted_image)
-        return masks, logits, painted_images
+                scores.append(score)
+        #del tensor_images
+        return masks, logits, painted_images, scores
     
         
 def parse_augment():
