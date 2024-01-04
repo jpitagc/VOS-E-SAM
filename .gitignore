@@ -15,6 +15,7 @@ vots.py
 .venvTA
 .venvTAHQ
 .venvTAFast
+.venv*
 test.ipynb
 test.py
 HQRequirements.txt
