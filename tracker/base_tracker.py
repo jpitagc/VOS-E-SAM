@@ -28,7 +28,7 @@ import time
 
 
 class BaseTracker:
-    def __init__(self, xmem_checkpoint, device, sam_model=None, sam_mode = None, model_type=None, save_inner_masks_folder = None) -> None:
+    def __init__(self, xmem_checkpoint, device, sam_model=None, sam_mode = None, model_type=None, save_inner_masks_folder = None, **kwargs) -> None:
         """
         device: model device
         xmem_checkpoint: checkpoint of XMem model
@@ -62,6 +62,14 @@ class BaseTracker:
         self.refinement_folder_masks = None
         self.current_video = None
         save_inner_masks_folder = os.path.join('./result',save_inner_masks_folder)
+
+        if sam_model and 'points_convertion' in kwargs: assert  kwargs['points_convertion'] in ['C','CP','CPS'], 'No point type convertion allowed, use C, CP or CPS'
+        else:  
+            print('Point Type convertion not specified')
+            return 
+        self.points_convertion_algorithm = kwargs['points_convertion']
+        print('algorithm'+self.points_convertion_algorithm)
+
         if save_inner_masks_folder is not None: 
             if not os.path.exists(save_inner_masks_folder):
                 os.makedirs(save_inner_masks_folder)
@@ -656,7 +664,10 @@ class BaseTracker:
         return all_bboxes
 
     def get_points_datatset_tests(self, segmentation_mask):
-        return self.get_best_points_of_interest_PolyLine(segmentation_mask)
+        if self.points_convertion_algorithm == 'C': return self.get_very_very_best_point_of_interest(segmentation_mask)
+        elif self.points_convertion_algorithm == 'CP': return self.get_best_points_of_interest_PolyLine(segmentation_mask)
+        else: return self.get_skeleton_and_poly(segmentation_mask)
+        
 
     @torch.no_grad()
     def custom_sam_refinement(self, frame, out_mask, logits, curr_frame, xmemScores ):
@@ -929,10 +940,10 @@ class BaseTracker:
                 masksout.append(masksout_ind)
                 scores.append(score.item())
             
-        for i in range(0,len(masksout)):
-            if scores[i] < 0.9705: 
-                scores[i] = xmemScores[i]
-                masksout[i] = all_masks_separated[i][None,:].astype(bool)
+        #for i in range(0,len(masksout)): 
+        #    if scores[i] < 0.94: 
+        #        scores[i] = xmemScores[i]
+        #        masksout[i] = all_masks_separated[i][None,:].astype(bool)
 
         listed = zip(scores,all_mask_position,masksout)
         sorted_listed = sorted(listed)

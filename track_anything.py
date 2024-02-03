@@ -23,7 +23,8 @@ class TrackingAnything():
         self.xmem = BaseTracker(self.xmem_checkpoint, device=current_device,\
             sam_model=self.samcontroler if self.args['use_refinement'] else None,\
             sam_mode=self.args['refinement_mode'] if self.args['use_refinement'] else None,\
-            save_inner_masks_folder = save_inner_masks_folder)
+            save_inner_masks_folder = save_inner_masks_folder,\
+            points_convertion = self.args['addArgs1'])
         self.im_transform = transforms.Compose([
             transforms.ToTensor(),
             im_normalization,
