@@ -22,3 +22,4 @@ notebooks/
 common/
 PythonAPI/
 .tmp.driveupload/
+.DS_Store

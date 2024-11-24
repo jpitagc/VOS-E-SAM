@@ -23,7 +23,7 @@ This model unifies XMEM with SAM and SAM-HQ to enhance the performance of object
 
 
 <div align=center>
-<img src="assets/XMEM-SAM.png" width="81%"/>
+<img src="assets/VOS-E-SAM_architecture.png" width="81%"/>
 </div>
 
 <!-- ![avengers]() -->
