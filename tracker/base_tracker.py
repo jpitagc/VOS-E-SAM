@@ -485,7 +485,11 @@ class BaseTracker:
         skeleton_points = [(y, x) for x, y in endpoints + branchpoints + midpoints]
         if len(skeleton_points) >= 5: skeleton_points = self.filter_multiple_points(skeleton_points)
         #self.print_skeleton_poly_points(mask,skeleton,skeleton_points)
-        if len(all_points) > 0: return np.concatenate((np.array(skeleton_points).astype('int'),np.array(all_points).astype('int')))
+        if len(all_points) > 0: 
+            if len(skeleton_points)> 0:
+                return np.concatenate((np.array(skeleton_points).astype('int'),np.array(all_points).astype('int')))
+            else: 
+                return np.array(all_points).astype('int')       
         else: np.array(skeleton_points).astype('int')
 
     def print_skeleton_poly_points(self, mask, skeleton, points):
@@ -940,10 +944,10 @@ class BaseTracker:
                 masksout.append(masksout_ind)
                 scores.append(score.item())
             
-        #for i in range(0,len(masksout)): 
-        #    if scores[i] < 0.94: 
-        #        scores[i] = xmemScores[i]
-        #        masksout[i] = all_masks_separated[i][None,:].astype(bool)
+        for i in range(0,len(masksout)): 
+            if scores[i] < 0.94: 
+                scores[i] = xmemScores[i]
+                masksout[i] = all_masks_separated[i][None,:].astype(bool)
 
         listed = zip(scores,all_mask_position,masksout)
         sorted_listed = sorted(listed)
