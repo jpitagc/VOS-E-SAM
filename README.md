@@ -109,14 +109,29 @@ cd Track-Anything
 # Install dependencies: 
 pip install -r requirements_SAM&HQSAM.txt
 ``` 
+IMPORTANT 
+
+Test for SAM and HQSAM are done using different virtual env and substituing the folder for package HQSAM 
+HQSAM V1 is the one used. Could be found in this repo: [HQSAM Repo](https://github.com/SysCV/sam-hq)
+
+Two different venv should be created and changed whenever tests are shifted for SAM or HQSAM.
+A selection in each example .ipynb has been added
+
+```python
+SAM_checkpoint = "./checkpoints/sam_vit_h_4b8939.pth"
+if 'HQ' in sys.prefix.split('.')[-1]:SAM_checkpoint = "./checkpoints/sam_hq_vit_h.pth"
+``` 
+
+TIP
+SAM venv should not add HQ in the name. Example .venvSAM
+HQSAM venv must add HQ in the name. Exampl .venvHQSAM
+
 ### Download checkpoints
 
 ```shell
 # Creadte a checkpoints folder:
 mkdir checkpoints
 ``` 
-Three checkpoints are need
-
 Segment Anything Checkpoint  -> [sam_vit_h_4b8939.pth](https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth)
 
 High Quality Segment Anything Checkpoint -> [sam_hq_vit_h.pth](https://drive.google.com/file/d/1qobFYrI4eyIANfBSmYcGuWRaSIXfMOQ8/view?usp=sharing)
@@ -128,9 +143,6 @@ XMem Checkpoint -> [XMem-s012.pth](https://drive.google.com/drive/folders/1QYsog
 # Create a datasets folder:
 mkdir datasets
 ``` 
-
-Three datasets are supported
-
 Davis 2016 [Download 480](https://graphics.ethz.ch/Downloads/Data/Davis/DAVIS-data.zip)
 
 Davis 2017 [Download 480](https://data.vision.ee.ethz.ch/csergi/share/davis/DAVIS-2017-trainval-480p.zip)
@@ -199,7 +211,7 @@ LongVOS/
 
 ### Use python notebooks to start
 
-Three notebooks to run tests on each dataset are provideded
+Notebooks to run tests on each dataset are provideded
 
 [DAVIS](./run_davis_test.ipynb)
 
@@ -209,7 +221,9 @@ Three notebooks to run tests on each dataset are provideded
 
 ### Test explanation
 
-In the previous three ipynb files test are declared in the same way. Here is an explanation of each
+Three previous ipynb files tests are declared in the same way. 
+
+Here is an explanation of each
 
 DAVIS
 ```python
