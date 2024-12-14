@@ -116,7 +116,15 @@ pip install -r requirements_SAM&HQSAM.txt
 
 deactivate
 ``` 
-Substitute package Segment Anything from origical to HQ. [HQSAM Repo](https://github.com/SysCV/sam-hq)
+Substitute package Segment Anything  from original to HQ. 
+
+```plaintext
+1. Download repo https://github.com/SysCV/sam-hq
+2. Find segment_anything folder in the repo 
+3. Go to virtual env packages .venvHQSAM\Lib\site-packages\segment_anything
+4. Replace folder
+``` 
+
 
 ### Download checkpoints
 
