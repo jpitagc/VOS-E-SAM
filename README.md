@@ -12,10 +12,10 @@
 
 <div style="padding: 15px;">
 <h1>
-VOSE_SAM
+VOS-E-SAM
 </h1>
 
-***Semisupervised Video Object Segmentation Enahnced with Segment Anything Model*** 
+***Semisupervised Video Object Segmentation Enhanced with Segment Anything Model*** 
 
 This model unifies XMEM with SAM and SAM-HQ to enhance the performance of object segmentation. 
 
@@ -97,6 +97,167 @@ If you find this work useful for your research or applications, please cite usin
 }
 ``` -->
 </div>
+
+## :computer: How to use
+
+#### Get the enviroment ready
+```shell
+# Clone the repository:
+gh repo clone jpitagc/VOS-E-SAM
+cd Track-Anything
+
+# Install dependencies: 
+pip install -r requirements_SAM&HQSAM.txt
+``` 
+#### Download checkpoints
+
+```shell
+# Creadte a checkpoints folder:
+mkdir checkpoints
+``` 
+Three checkpoints are need
+
+Segment Anything Checkpoint  -> "sam_vit_h_4b8939.pth"
+
+High Quality Segment Anything Checkpoint -> "sam_hq_vit_h.pth"
+
+XMem Checkpoint -> "XMem-s012.pth"
+
+#### Download datasets
+```shell
+# Create a datasets folder:
+mkdir datasets
+``` 
+
+Three datasets are supported
+
+Davis 2016 [Download 480](https://graphics.ethz.ch/Downloads/Data/Davis/DAVIS-data.zip)
+
+Davis 2017 [Download 480](https://data.vision.ee.ethz.ch/csergi/share/davis/DAVIS-2017-trainval-480p.zip)
+
+```plaintext
+DAVIS/
+├── Annotation/
+│   ├── 480p/
+│   │   ├── bear/
+│   │   └── .../
+│   └── 1080p/
+│       ├── bear/
+│       └── .../
+├── ImageSets/
+│   ├── 2016/
+│   │   ├── train
+│   │   └── val
+│   └── 2017/
+│       ├── train
+│       └── val
+├── JPEGImages/
+│   ├── 480p/
+│   │   ├── bear/
+│   │   └── .../
+│   └── 1080p/
+│       ├── bear/
+│       └── .../
+│
+└── .../
+
+``` 
+
+LondVideo Dataset [Download](https://www.kaggle.com/datasets/gvclsu/long-videos?resource=download)
+** Download from Kaggle 
+
+```plaintext
+LongDataset/
+├── Annotation/
+│   ├── blueboy/
+│   └── dressage/
+│   └── rat/
+│       
+├── JPEGImages/
+│   ├── blueboy/
+│   └── dressage/
+│   └── rat/
+│
+└── .../
+``` 
+
+LVOS Dataset [Download Test](https://drive.google.com/file/d/1Vp_y8dSUO4ktYmeBFkIQnmAxK6bl3Eyf/view)
+
+LongVOS/
+├── Test/
+│   ├── Annotations/
+│   │   ├── 5VwnMLaz/
+│   │   └── .../
+│   └── JPEGImages/
+│       ├── 5VwnMLaz/
+│       └── .../
+├── Val/
+│
+└── .../
+
+
+#### Use python notebooks to start
+
+Three notebooks to run tests on each dataset are provideded
+
+[DAVIS](./run_davis_test.ipynb)
+
+[LongDataset](./run_longdataset_test.ipynb)
+
+[LVOS](./run_lvos_test.ipynb)
+
+#### Test explanation
+
+In the previous three ipynb files test are declared in the same way. Here is an explanation of each
+
+DAVIS
+```python
+# Create a datasets folder:
+{
+    'DatasetArgs' :{
+        'Dataset' : 'Davis', # Dataset to load for test
+        'Year' : 17, # Year of the dataset 17 or 16
+        'Set' : 'val', # Set inside the dataset to use train or val
+        'Resolution': '480p' # Resolition to work with 480p or 1080p
+    },
+    'TrackingAnythingArgs' : {
+            'use_refinement' : True, # If SAM or HQ SAM Refinement is needed. True or False. False is XMEM default architecture
+            'refinement_mode' : 'both_neg', # Which prompt inputs to use for SAM models. Posibilities ['point','bbox','both','both_neg','mask','mask_bbox','mask_pos','mask_bbox_pos_neg','mask_bbox_neg','mask_bbox_pos']
+            'addArgs1':'CP' # Points calculations. Posibilities  ['C','CP','CPS'] 
+    }
+}
+``` 
+
+DAVIS
+```python
+runtimeargs = {
+    'DatasetArgs' :{
+        'Dataset' : 'LongDataset', # Dataset to load for test
+        'Set' : 'val', # Set inside the dataset to use
+    },
+    'TrackingAnythingArgs' : {
+            'use_refinement' : True, # If SAM or HQ SAM Refinement is needed. True or False. False is XMEM default architecture
+            'refinement_mode' : 'both_neg', # Which prompt inputs to use for SAM models. Posibilities ['point','bbox','both','both_neg','mask','mask_bbox','mask_pos','mask_bbox_pos_neg','mask_bbox_neg','mask_bbox_pos']
+            'addArgs1':'CP' # Points calculations. Posibilities  ['C','CP','CPS'] 
+    }
+}
+``` 
+
+DAVIS
+```python
+{
+    'DatasetArgs' :{
+        'Dataset' : 'LongVOS', # Dataset to load for test
+        'Set' : 'test', # Set inside the dataset to use
+    },
+      'TrackingAnythingArgs' : {
+            'use_refinement' : False, # If SAM or HQ SAM Refinement is needed. True or False. False is XMEM default architecture
+            'refinement_mode' : '_', # Which prompt inputs to use for SAM models. Posibilities ['point','bbox','both','both_neg','mask','mask_bbox','mask_pos','mask_bbox_pos_neg','mask_bbox_neg','mask_bbox_pos']
+            'addArgs1':'_' # Points calculations. Posibilities  ['C','CP','CPS'] 
+    }
+}
+``` 
+
 
 ## :clap: Acknowledgements
 

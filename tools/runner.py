@@ -221,3 +221,64 @@ def run_model_on_longdata_set(name, model,videoLoader, compute_metrics = False,s
         all_test_metrics.to_csv(all_tests_csv, index = False)
                 
     return masks, logits, painted_images
+
+
+def run_model_on_longVOS_set(name, model,videoLoader, compute_metrics = False,save_masks = False, compute_video = False, verbose = True):
+    
+    folder_path = f'./resultLongVOS/{name}'
+    if compute_metrics or compute_video or save_masks: 
+        if not os.path.exists(folder_path):
+            os.makedirs(folder_path)
+        if compute_video: 
+            path_to_videos = folder_path + '/videos'
+            if not os.path.exists(path_to_videos): os.makedirs(path_to_videos)
+    
+    for seq in list(videoLoader.get_sequences()):
+        
+        model.xmem.current_video = seq
+        if verbose: print(f'Video: {seq}')
+
+        all_gt_masks, _, all_masks_id = videoLoader.get_all_masks(seq, True) 
+        if os.name == 'nt': all_masks_id = [int(folder.split('\\')[-1]) for folder in all_masks_id]
+        images_root = os.path.join(videoLoader.root_folder ,'JPEGImages',seq)
+        file_names = sorted(os.listdir(images_root))
+        file_ids = [int(name.split('.')[0]) for name in file_names]
+        test_ids = [file_ids.index(int(mask_id)) for mask_id in all_masks_id[1:]]
+        all_frames = load_images_from_folder(images_root,file_names)
+        initial_mask = all_gt_masks[0,0,:,:]
+        #test_ids = [int((int(all_masks_id[i]) - int(all_masks_id[0]))/3) for i in range(1,len(all_masks_id))]
+        width,height,_= all_frames[0].shape
+        
+        #Compute masks for all images
+        if verbose:print('Computing all masks')
+        model.xmem.clear_memory()
+        masks, logits, painted_images, scores = model.generator(images=all_frames, template_mask=initial_mask)
+        model.xmem.clear_memory()  
+        
+        if compute_video: 
+            if verbose: print('Generating video')
+            if width % 2 != 0 or height % 2 != 0: 
+                painted_images = pad_to_divisible_by_two(painted_images)
+            generate_video_from_frames(painted_images, output_path= path_to_videos + f"/{seq}.mp4", fps = 10) 
+
+        if save_masks:
+            if verbose: print('Saving masks') 
+            path_to_masks = folder_path + '/masks/' + seq
+            if not os.path.exists(path_to_masks): os.makedirs(path_to_masks)
+            for i,mask in enumerate(painted_images): 
+                image = Image.fromarray(mask)
+                image.save(os.path.join(path_to_masks, '{:05d}.png'.format(i)))
+            #path_to_masks = path_to_masks
+            #if not os.path.exists(path_to_masks): os.makedirs(path_to_masks)
+            #for i,mask in enumerate(masks): 
+            #    print('Saving Masks 2')
+            #    image = Image.fromarray(mask)
+            #    image.save(os.path.join(path_to_masks, '{:05d}_2.png'.format(i)))
+
+            #from davisImpaiting.davisBaseImpainter import save_mask
+            #for i,mask in enumerate(masks): 
+            #    save_mask(mask,os.path.join(path_to_masks, '{:05d}.png'.format(i)))
+            
+            
+
+    return masks, logits, painted_images
