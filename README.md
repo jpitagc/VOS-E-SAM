@@ -100,7 +100,7 @@ If you find this work useful for your research or applications, please cite usin
 
 ## :computer: How to use
 
-#### Get the enviroment ready
+### Get the enviroment ready
 ```shell
 # Clone the repository:
 gh repo clone jpitagc/VOS-E-SAM
@@ -109,7 +109,7 @@ cd Track-Anything
 # Install dependencies: 
 pip install -r requirements_SAM&HQSAM.txt
 ``` 
-#### Download checkpoints
+### Download checkpoints
 
 ```shell
 # Creadte a checkpoints folder:
@@ -117,13 +117,13 @@ mkdir checkpoints
 ``` 
 Three checkpoints are need
 
-Segment Anything Checkpoint  -> "sam_vit_h_4b8939.pth"
+Segment Anything Checkpoint  -> [sam_vit_h_4b8939.pth](https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth)
 
-High Quality Segment Anything Checkpoint -> "sam_hq_vit_h.pth"
+High Quality Segment Anything Checkpoint -> [sam_hq_vit_h.pth](https://drive.google.com/file/d/1qobFYrI4eyIANfBSmYcGuWRaSIXfMOQ8/view?usp=sharing)
 
-XMem Checkpoint -> "XMem-s012.pth"
+XMem Checkpoint -> [XMem-s012.pth](https://drive.google.com/drive/folders/1QYsog7zNzcxGXTGBzEhMUg8QVJwZB6D1)
 
-#### Download datasets
+### Download datasets
 ```shell
 # Create a datasets folder:
 mkdir datasets
@@ -164,7 +164,7 @@ DAVIS/
 ``` 
 
 LondVideo Dataset [Download](https://www.kaggle.com/datasets/gvclsu/long-videos?resource=download)
-** Download from Kaggle 
+
 
 ```plaintext
 LongDataset/
@@ -183,6 +183,7 @@ LongDataset/
 
 LVOS Dataset [Download Test](https://drive.google.com/file/d/1Vp_y8dSUO4ktYmeBFkIQnmAxK6bl3Eyf/view)
 
+```plaintext
 LongVOS/
 ├── Test/
 │   ├── Annotations/
@@ -194,9 +195,9 @@ LongVOS/
 ├── Val/
 │
 └── .../
+``` 
 
-
-#### Use python notebooks to start
+### Use python notebooks to start
 
 Three notebooks to run tests on each dataset are provideded
 
@@ -206,7 +207,7 @@ Three notebooks to run tests on each dataset are provideded
 
 [LVOS](./run_lvos_test.ipynb)
 
-#### Test explanation
+### Test explanation
 
 In the previous three ipynb files test are declared in the same way. Here is an explanation of each
 
