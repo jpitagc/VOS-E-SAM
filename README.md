@@ -240,7 +240,8 @@ DAVIS
     'TrackingAnythingArgs' : {
             'use_refinement' : True, # If SAM or HQ SAM Refinement is needed. True or False. False is XMEM default architecture
             'refinement_mode' : 'both_neg', # Which prompt inputs to use for SAM models. Posibilities ['point','bbox','both','both_neg','mask','mask_bbox','mask_pos','mask_bbox_pos_neg','mask_bbox_neg','mask_bbox_pos']
-            'addArgs1':'CP' # Points calculations. Posibilities  ['C','CP','CPS'] 
+            'addArgs1':'CP', # Points calculations. Posibilities  ['C','CP','CPS'] 
+            'optimized':False, # Wheter expected IoU from SAM or HQSAM is used to determined if masks is better. True or False
     }
 }
 ``` 
@@ -255,7 +256,8 @@ runtimeargs = {
     'TrackingAnythingArgs' : {
             'use_refinement' : True, # If SAM or HQ SAM Refinement is needed. True or False. False is XMEM default architecture
             'refinement_mode' : 'both_neg', # Which prompt inputs to use for SAM models. Posibilities ['point','bbox','both','both_neg','mask','mask_bbox','mask_pos','mask_bbox_pos_neg','mask_bbox_neg','mask_bbox_pos']
-            'addArgs1':'CP' # Points calculations. Posibilities  ['C','CP','CPS'] 
+            'addArgs1':'CP', # Points calculations. Posibilities  ['C','CP','CPS'] 
+            'optimized':False, # Wheter expected IoU from SAM or HQSAM is used to determined if masks is better. True or False
     }
 }
 ``` 
@@ -270,7 +272,8 @@ DAVIS
       'TrackingAnythingArgs' : {
             'use_refinement' : False, # If SAM or HQ SAM Refinement is needed. True or False. False is XMEM default architecture
             'refinement_mode' : 'both_neg', # Which prompt inputs to use for SAM models. Posibilities ['point','bbox','both','both_neg','mask','mask_bbox','mask_pos','mask_bbox_pos_neg','mask_bbox_neg','mask_bbox_pos']
-            'addArgs1':'CP' # Points calculations. Posibilities  ['C','CP','CPS'] 
+            'addArgs1':'CP', # Points calculations. Posibilities  ['C','CP','CPS'] 
+            'optimized':False, # Wheter expected IoU from SAM or HQSAM is used to determined if masks is better. True or False
     }
 }
 ``` 
