@@ -15,12 +15,16 @@
 VOS-E-SAM
 </h1>
 
-***Semisupervised Video Object Segmentation Enhanced with Segment Anything Model*** 
+***Vanishing Mask Refinement in Semi-Supervised Video Object Segmentation*** 
 
 This model unifies XMEM with SAM and SAM-HQ to enhance the performance of object segmentation. 
 
 
+<h2>
+Abstract
+</h2>
 
+This paper presents Video Object Segmentation Enhanced with Segment Anything Model (VOS/E-SAM), a multi-stage architecture for Semi-supervised Video Object Segmentation (SVOS) using the foundational Segment Anything Model (SAM) architecture, aimed at addressing the challenges of mask degradation over time in long video sequences. Our architectural approach enhances the object masks produced by the XMem model by incorporating SAM. This integra- tion uses various input combinations and low-level computer vision techniques to generate point prompts, in order to improve mask continuity and accuracy throughout the entire video cycle. The main challenge addressed is the fading or vanishing of object masks in long video sequences due to problems such as changes in object appearance, occlusions, camera movements, and approach changes. Both the baseline architecture and the newer high-quality version are tested, addressing the primary challenge of object mask fading or vanishing in long video sequences due to changes in object appearance, occlusions, camera movements, and variations in approach. Through rigorous experimentation with different prompt configurations, we identified an outstanding configuration of SAM inputs to improve mask refinement. Evaluations on benchmark long video datasets, such as LongDataset and LVOS, show that our approach significantly improves mask quality in single-object extended video sequences proven by percentage increments on jaccard index ( ) and contour accuracy ( ) based metrics (mean, recall and decay). Our results show remarkable improvements in mask persistence and accuracy, which sets a new standard for the integration of foundational models in video segmentation and lays the foundation for future research in this field
 
 <div align=center>
 <img src="assets/VOS-E-SAM_architecture.png" width="91%"/>
@@ -62,40 +66,6 @@ This model unifies XMEM with SAM and SAM-HQ to enhance the performance of object
 </div>
 
 
-<!-- ---
-
-### :joystick: Example - Video Inpainting (with [E2FGVI](https://github.com/MCG-NKU/E2FGVI))
-
-https://user-images.githubusercontent.com/28050374/232959816-07f2826f-d267-4dda-8ae5-a5132173b8f4.mp4 -->
-
-<!-- ## :computer: Get Started
-#### Linux & Windows
-```shell
-# Clone the repository:
-git clone https://github.com/gaomingqi/Track-Anything.git
-cd Track-Anything
-
-# Install dependencies: 
-pip install -r requirements.txt
-
-# Run the Track-Anything gradio demo.
-python app.py --device cuda:0
-# python app.py --device cuda:0 --sam_model_type vit_b # for lower memory usage
-``` -->
-
-<!-- 
-## :book: Citation
-If you find this work useful for your research or applications, please cite using this BibTeX:
-```bibtex
-@misc{yang2023track,
-      title={Track Anything: Segment Anything Meets Videos}, 
-      author={Jinyu Yang and Mingqi Gao and Zhe Li and Shang Gao and Fangjing Wang and Feng Zheng},
-      year={2023},
-      eprint={2304.11968},
-      archivePrefix={arXiv},
-      primaryClass={cs.CV}
-}
-``` -->
 </div>
 
 ## :computer: How to use
