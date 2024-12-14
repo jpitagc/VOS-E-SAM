@@ -68,7 +68,14 @@ class BaseTracker:
             print('Point Type convertion not specified')
             return 
         self.points_convertion_algorithm = kwargs['points_convertion']
-        print('algorithm'+self.points_convertion_algorithm)
+        print('algorithm '+self.points_convertion_algorithm)
+
+        if sam_model and 'optimized' in kwargs: assert  isinstance(kwargs['optimized'], bool), "Optimized variable not boolean tyope"
+        else:  
+            print('Point Type convertion not specified')
+            return 
+        self.optimized = kwargs['optimized']
+        if self.optimized: print('optimization activated')
 
         if save_inner_masks_folder is not None: 
             if not os.path.exists(save_inner_masks_folder):
@@ -943,11 +950,12 @@ class BaseTracker:
                 #self.print_image_bbox(masksout_ind.squeeze(0).astype('uint8'),[bbox],[pos_points], [neg_points] if neg_points.size > 0 else None)
                 masksout.append(masksout_ind)
                 scores.append(score.item())
-            
-        for i in range(0,len(masksout)): 
-            if scores[i] < 0.94: 
-                scores[i] = xmemScores[i]
-                masksout[i] = all_masks_separated[i][None,:].astype(bool)
+        
+        if self.optimized:
+            for i in range(0,len(masksout)): 
+                if scores[i] < 0.94: 
+                    scores[i] = xmemScores[i]
+                    masksout[i] = all_masks_separated[i][None,:].astype(bool)
 
         listed = zip(scores,all_mask_position,masksout)
         sorted_listed = sorted(listed)

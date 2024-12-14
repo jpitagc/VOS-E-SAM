@@ -211,7 +211,9 @@ LongVOS/
 
 ### Use python notebooks to start
 
-Notebooks to run tests on each dataset are provideded
+Notebooks to run tests on each dataset are provided
+
+All test runners will create a './results' folder or store in a existing one.
 
 [DAVIS](./run_davis_test.ipynb)
 
@@ -267,8 +269,8 @@ DAVIS
     },
       'TrackingAnythingArgs' : {
             'use_refinement' : False, # If SAM or HQ SAM Refinement is needed. True or False. False is XMEM default architecture
-            'refinement_mode' : '_', # Which prompt inputs to use for SAM models. Posibilities ['point','bbox','both','both_neg','mask','mask_bbox','mask_pos','mask_bbox_pos_neg','mask_bbox_neg','mask_bbox_pos']
-            'addArgs1':'_' # Points calculations. Posibilities  ['C','CP','CPS'] 
+            'refinement_mode' : 'both_neg', # Which prompt inputs to use for SAM models. Posibilities ['point','bbox','both','both_neg','mask','mask_bbox','mask_pos','mask_bbox_pos_neg','mask_bbox_neg','mask_bbox_pos']
+            'addArgs1':'CP' # Points calculations. Posibilities  ['C','CP','CPS'] 
     }
 }
 ``` 
