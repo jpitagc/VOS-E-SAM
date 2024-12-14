@@ -111,20 +111,38 @@ pip install -r requirements_SAM&HQSAM.txt
 ``` 
 IMPORTANT 
 
-Test for SAM and HQSAM are done using different virtual env and substituing the folder for package HQSAM 
+Test for SAM and HQSAM are done using different virtual env and substituing the folder for package HQSAM.
+
 HQSAM V1 is the one used. Could be found in this repo: [HQSAM Repo](https://github.com/SysCV/sam-hq)
 
-Two different venv should be created and changed whenever tests are shifted for SAM or HQSAM.
-A selection in each example .ipynb has been added
+Two different virtual environment should be created and changed whenever tests are shifted for SAM or HQSAM.
+A selection in each example .ipynb has been added. 
+
+Checkpoint form HQSAM to SAM and viceversa will fail in loading
 
 ```python
 SAM_checkpoint = "./checkpoints/sam_vit_h_4b8939.pth"
 if 'HQ' in sys.prefix.split('.')[-1]:SAM_checkpoint = "./checkpoints/sam_hq_vit_h.pth"
 ``` 
+SAM venv should not add `HQ`  in the name. Example `.venvSAM` 
 
-TIP
-SAM venv should not add HQ in the name. Example .venvSAM
-HQSAM venv must add HQ in the name. Exampl .venvHQSAM
+```shell
+python -m venv .venvSAM
+source .venvSAM/bin/activate
+pip install -r requirements_SAM&HQSAM.txt
+
+deactivate
+``` 
+HQSAM venv must add `HQ` in the name. Example `.venvHQSAM` 
+
+```shell
+python -m venv .venvHQSAM
+source .venvHQSAM/bin/activate
+pip install -r requirements_SAM&HQSAM.txt
+
+deactivate
+``` 
+Substitute package Segment Anything from origical to HQ. [HQSAM Repo](https://github.com/SysCV/sam-hq)
 
 ### Download checkpoints
 
