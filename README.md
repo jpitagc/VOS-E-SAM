@@ -277,7 +277,23 @@ DAVIS
     }
 }
 ``` 
+## :book: Citation
 
+If you find this project useful in your research, please consider citing:
+
+```bibtex
+@article{PITA2025112837,
+  title = {Vanishing mask refinement in semi-supervised video object segmentation},
+  journal = {Applied Soft Computing},
+  pages = {112837},
+  year = {2025},
+  issn = {1568-4946},
+  doi = {https://doi.org/10.1016/j.asoc.2025.112837},
+  url = {https://www.sciencedirect.com/science/article/pii/S1568494625001486},
+  author = {Javier Pita and Juan P. Llerena and Miguel A. Patricio and Antonio Berlanga and Luis Usero},
+  keywords = {Video Object Segmentation, Foundation model, Object Segmentation, Long-term videos, Deep learning}
+}
+```
 
 ## :clap: Acknowledgements
 
