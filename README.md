@@ -16,6 +16,7 @@ VOS-E-SAM
 </h1>
 
 ***Vanishing Mask Refinement in Semi-Supervised Video Object Segmentation*** 
+[Paper](https://www.sciencedirect.com/science/article/abs/pii/S1568494625001486)
 
 This model unifies XMEM with SAM and SAM-HQ to enhance the performance of object segmentation. 
 
